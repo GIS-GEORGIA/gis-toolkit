@@ -63,6 +63,8 @@ PTR = {
                       "ka": "ვერ ნაპოვნი კოდების შენახვა (.txt)"},
     "ready":         {"en": "Ready.", "ka": "მზადაა."},
     "searching":     {"en": "Searching…", "ka": "ძებნა…"},
+    "reading_layers": {"en": "Reading layers…", "ka": "შრეების წაკითხვა…"},
+    "reading_fields": {"en": "Reading fields…", "ka": "ველების წაკითხვა…"},
 
     # dialogs
     "err":           {"en": "Error", "ka": "შეცდომა"},
@@ -203,6 +205,7 @@ class ParcelSearchTool(ToolFrame):
         self.msg_queue = queue.Queue()
         self.searching = False
         self._cancel_event = threading.Event()
+        self._meta_gen = 0            # ბაზის მეტამონაცემების წაკითხვის თაობა
         self.last_not_found = []
         st = self._state()                       # transient (სესიის ფარგლებში)
         saved = self.app.get_tool_config(self.tid)  # მუდმივი (git-ignored ფაილი)
@@ -384,48 +387,81 @@ class ParcelSearchTool(ToolFrame):
             self._load_layers()
 
     def _load_layers(self, silent=False):
-        """ბაზიდან ყველა შრის წაკითხვა ჩამონათვალში. კონკრეტული (კონფიგში
-        მითითებული) შრე რჩება ნაგულისხმევად, თუ ბაზაში არსებობს; თუ არა —
-        პირველი. silent=True — popup-ების გარეშე (გაშვებისთანავე ავტოწაკითხვა)."""
+        """ბაზიდან შრეების და ველების წაკითხვა — ფონურ ნაკადში, რომ დიდი/ქსელური
+        .gdb-ის კითხვამ მთელი პროგრამა არ გააჭედოს. შედეგი queue-თი ბრუნდება და
+        მთავარ ნაკადში ივსება (Tk-ის widget-ები მხოლოდ იქ იცვლება).
+
+        კონკრეტული (კონფიგში მითითებული) შრე რჩება ნაგულისხმევად, თუ ბაზაშია;
+        თუ არა — პირველი. silent=True — popup-ების გარეშე (ავტოწაკითხვა)."""
         gdb = self.gdb_var.get().strip()
         if not os.path.exists(gdb):
             if not silent:
                 messagebox.showerror(self.tr("err"), self.tr("err_gdb"))
             return
+        # მიმდინარე მნიშვნელობებს მთავარ ნაკადში ვკითხულობთ (Tk thread-safe არაა)
+        cur_layer = self._layer_code(self.layer_var.get())
+        cur_field = self.field_var.get()
+        self._meta_gen += 1
+        gen = self._meta_gen
+        self.status.set(self.tr("reading_layers"))
+        threading.Thread(target=self._meta_worker,
+                         args=(gen, gdb, cur_layer, cur_field, silent),
+                         daemon=True).start()
+
+    def _meta_worker(self, gen, gdb, cur_layer, cur_field, silent):
+        """ფონური: შრეების სია + არჩეული შრის ველები. ცდომილება/შედეგი queue-ში."""
         try:
             layers = [row[0] for row in pyogrio.list_layers(gdb)]
             if not layers:
-                if not silent:
-                    messagebox.showwarning(self.tr("empty_title"), self.tr("no_layers"))
+                self.msg_queue.put(("meta_empty", (gen, silent)))
                 return
-            # ჩამონათვალში კოდის გვერდით რეგიონი: „R02 — ქვემო ქართლი“
             displays = [self._layer_display(l) for l in layers]
-            self.layer_combo["values"] = displays       # ყველა შრე
-            # ნაგულისხმევის შენარჩუნება ნამდვილი სახელით (და არა display-ით)
-            cur = self._layer_code(self.layer_var.get())
-            match = next((d for d, l in zip(displays, layers) if l == cur), None)
-            self.layer_var.set(match or displays[0])
-            self._load_fields(silent=silent)
-            self._log(self.tr("log_layers", layers=", ".join(displays)))
-        except Exception as e:
-            if not silent:
-                messagebox.showerror(self.tr("err"), str(e))
+            match = next((d for d, l in zip(displays, layers) if l == cur_layer),
+                         None)
+            chosen_display = match or displays[0]
+            chosen_layer = self._layer_code(chosen_display)
+            fields, chosen_field = None, cur_field
+            try:                       # ველების წაკითხვა იმავე ნაკადში
+                info = pyogrio.read_info(gdb, layer=chosen_layer)
+                fields = list(info["fields"])
+                chosen_field = pick_code_field(fields, cur_field, DEFAULT_FIELD)
+            except Exception:          # noqa: BLE001 — შრეები მაინც ჩავსვათ
+                pass
+            self.msg_queue.put(("meta", {
+                "gen": gen, "silent": silent, "displays": displays,
+                "chosen_display": chosen_display, "fields": fields,
+                "chosen_field": chosen_field,
+            }))
+        except Exception as e:         # noqa: BLE001
+            self.msg_queue.put(("meta_err", (gen, silent, str(e))))
 
     _layer_display = staticmethod(layer_display)
     _layer_code = staticmethod(layer_code)
 
     def _load_fields(self, silent=False):
+        """მხოლოდ ველების ხელახალი წაკითხვა (შრის შეცვლისას) — ფონურ ნაკადში."""
         gdb = self.gdb_var.get().strip()
         layer = self._layer_code(self.layer_var.get().strip())
+        cur_field = self.field_var.get()
+        if not gdb or not layer:
+            return
+        self._meta_gen += 1
+        gen = self._meta_gen
+        self.status.set(self.tr("reading_fields"))
+        threading.Thread(target=self._fields_worker,
+                         args=(gen, gdb, layer, cur_field, silent),
+                         daemon=True).start()
+
+    def _fields_worker(self, gen, gdb, layer, cur_field, silent):
         try:
             info = pyogrio.read_info(gdb, layer=layer)
             fields = list(info["fields"])
-            self.field_combo["values"] = fields
-            self.field_var.set(pick_code_field(fields, self.field_var.get(),
-                                               DEFAULT_FIELD))
-        except Exception as e:
-            if not silent:
-                messagebox.showerror(self.tr("err"), str(e))
+            chosen = pick_code_field(fields, cur_field, DEFAULT_FIELD)
+            self.msg_queue.put(("fields", {
+                "gen": gen, "fields": fields, "chosen_field": chosen,
+            }))
+        except Exception as e:         # noqa: BLE001
+            self.msg_queue.put(("meta_err", (gen, silent, str(e))))
 
     # ---- შეყვანის დამხმარეები ----
     def _load_file(self):
@@ -555,9 +591,49 @@ class ParcelSearchTool(ToolFrame):
                     self.status.set(self.tr("progress", i=i, n=n))
                 elif kind == "done":
                     self._on_done(payload)
+                elif kind == "meta":
+                    self._apply_meta(payload)
+                elif kind == "fields":
+                    self._apply_fields(payload)
+                elif kind == "meta_empty":
+                    gen, silent = payload
+                    if gen == self._meta_gen:
+                        if not self.searching:
+                            self.status.set(self.tr("ready"))
+                        if not silent:
+                            messagebox.showwarning(self.tr("empty_title"),
+                                                   self.tr("no_layers"))
+                elif kind == "meta_err":
+                    gen, silent, msg = payload
+                    if gen == self._meta_gen:
+                        if not self.searching:
+                            self.status.set(self.tr("ready"))
+                        if not silent:
+                            messagebox.showerror(self.tr("err"), msg)
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)
+
+    def _apply_meta(self, d):
+        """ფონურად წაკითხული შრეები/ველები — widget-ებში (მთავარ ნაკადში)."""
+        if d["gen"] != self._meta_gen:
+            return                          # უფრო ახალმა წაკითხვამ გადაასწრო
+        self.layer_combo["values"] = d["displays"]
+        self.layer_var.set(d["chosen_display"])
+        if d["fields"] is not None:
+            self.field_combo["values"] = d["fields"]
+            self.field_var.set(d["chosen_field"])
+        self._log(self.tr("log_layers", layers=", ".join(d["displays"])))
+        if not self.searching:
+            self.status.set(self.tr("ready"))
+
+    def _apply_fields(self, d):
+        if d["gen"] != self._meta_gen:
+            return
+        self.field_combo["values"] = d["fields"]
+        self.field_var.set(d["chosen_field"])
+        if not self.searching:
+            self.status.set(self.tr("ready"))
 
     def _log(self, msg):
         self.log_text.configure(state="normal")
