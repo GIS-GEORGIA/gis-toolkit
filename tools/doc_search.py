@@ -30,11 +30,26 @@ from tools.tooltip import add_tip
 from tools.translit import lat_to_geo
 from tools.doc_search_core import (
     MODE_ALL, MODE_ANY, MODE_PHRASE,
-    index_folder, index_stats, search,
+    SORT_MATCHES, SORT_DATE_DESC, SORT_DATE_ASC, SORT_NAME,
+    index_folder, index_stats, search, sort_results, parse_category_rules,
 )
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.path.join(APP_DIR, "doc_search_index.db")
+CATEGORIES_FILE = os.path.join(APP_DIR, "doc_categories.txt")
+
+# ნაგულისხმევი კატეგორიები — ლოკალური doc_categories.txt-ში (Notepad-ით რედაქტ.).
+# ფორმატი: „კატეგორია = საკვანძო სიტყვა 1, საკვანძო სიტყვა 2“.
+DEFAULT_CATEGORIES = (
+    "# GIS_BOX — დოკუმენტების კატეგორიები / document categories\n"
+    "# ფორმატი:  კატეგორია = საკვანძო სიტყვა 1, საკვანძო სიტყვა 2\n"
+    "# ძებნისას დოკუმენტი პირველ დამთხვეულ კატეგორიას მიეკუთვნება (ტექსტში ეძებს).\n"
+    "# ეს ფაილი ლოკალურია — რედაქტირდება Notepad-ით, GitHub-ზე არ იტვირთება.\n"
+    "\n"
+    "ენერგო-პრო = ენერგო-პრო, ენერგოპრო, energo-pro\n"
+    "ეკონომიკა = ეკონომიკის სამინისტრო, ეკონომიკისა და მდგრადი განვითარების\n"
+    "სახელმწიფო ქონება = სახელმწიფო ქონების, ქონების ეროვნული სააგენტო\n"
+)
 
 
 # ---- თარგმანები ------------------------------------------------------------
@@ -76,7 +91,30 @@ DTR = {
     "mode_any":   {"en": "Any word", "ka": "რომელიმე"},
 
     "col_file":   {"en": "File", "ka": "ფაილი"},
+    "col_date":   {"en": "Date", "ka": "თარიღი"},
     "col_hits":   {"en": "Matches", "ka": "დამთხვევა"},
+
+    # სორტირება / კატეგორიზაცია
+    "sort_lbl":   {"en": "Sort:", "ka": "დალაგება:"},
+    "sort_matches": {"en": "Most matches", "ka": "მეტი დამთხვევა"},
+    "sort_date_desc": {"en": "Date — newest first", "ka": "თარიღი — ახალი ზემოთ"},
+    "sort_date_asc": {"en": "Date — oldest first", "ka": "თარიღი — ძველი ზემოთ"},
+    "sort_name":  {"en": "File name", "ka": "ფაილის სახელი"},
+    "group_cat":  {"en": "Group by category", "ka": "დაჯგუფება კატეგორიით"},
+    "cat_edit":   {"en": "🗂 Categories", "ka": "🗂 კატეგორიები"},
+    "uncategorized": {"en": "Other", "ka": "სხვა"},
+    "tip_sort":   {"en": "Order the found files. “Newest first” uses the date "
+                         "mentioned inside the document.",
+                   "ka": "ნაპოვნი ფაილების დალაგება. „ახალი ზემოთ“ იყენებს "
+                         "დოკუმენტში ნახსენებ თარიღს."},
+    "tip_group":  {"en": "Group files by sender/organization (Energo-Pro together, "
+                         "Economy together …), using the category rules.",
+                   "ka": "ფაილების დაჯგუფება გამომგზავნის/ორგანიზაციის მიხედვით "
+                         "(ენერგო-პრო ერთად, ეკონომიკა ერთად …), წესების მიხედვით."},
+    "tip_cat_edit": {"en": "Edit the category rules (category = keywords). Applies "
+                           "on the next search — no re-indexing needed.",
+                     "ka": "კატეგორიის წესების რედაქტირება (კატეგორია = სიტყვები). "
+                           "მოქმედებს შემდეგ ძებნაზე — ხელახლა ინდექსაცია არ სჭირდება."},
     "btn_open":   {"en": "Open file", "ka": "ფაილის გახსნა"},
     "btn_folder": {"en": "Open folder", "ka": "საქაღალდის გახსნა"},
     "btn_export": {"en": "Export .xlsx", "ka": "ექსპორტი .xlsx"},
@@ -124,8 +162,10 @@ DTR = {
     "exp_done":   {"en": "Results saved: {path}", "ka": "შედეგები შენახულია: {path}"},
     "exp_dep":    {"en": "Export needs the openpyxl package.",
                    "ka": "ექსპორტს openpyxl პაკეტი სჭირდება."},
-    "exp_cols":   {"en": ("File", "Location", "Matches in file", "Context", "Path"),
-                   "ka": ("ფაილი", "ადგილი", "დამთხვევა ფაილში", "კონტექსტი", "გზა")},
+    "exp_cols":   {"en": ("Category", "Date", "File", "Location",
+                          "Matches in file", "Context", "Path"),
+                   "ka": ("კატეგორია", "თარიღი", "ფაილი", "ადგილი",
+                          "დამთხვევა ფაილში", "კონტექსტი", "გზა")},
 
     # tooltip-ები
     "tip_browse": {"en": "Pick the folder that holds the documents.",
@@ -248,13 +288,45 @@ class DocSearchTool(ToolFrame):
         self._update_preview()
 
         mrow = ttk.Frame(self)
-        mrow.pack(fill="x", pady=(6, 8))
+        mrow.pack(fill="x", pady=(6, 4))
         self.mode_var = tk.StringVar(value=st.get("mode", MODE_PHRASE))
         for value, key in ((MODE_PHRASE, "mode_phrase"),
                            (MODE_ALL, "mode_all"),
                            (MODE_ANY, "mode_any")):
             ttk.Radiobutton(mrow, text=self.tr(key), value=value,
                             variable=self.mode_var).pack(side="left", padx=(0, 14))
+
+        # --- დალაგება + კატეგორიზაცია ---
+        srow = ttk.Frame(self)
+        srow.pack(fill="x", pady=(0, 8))
+        ttk.Label(srow, text=self.tr("sort_lbl")).pack(side="left")
+        # label ↔ mode რუკა (Combobox-ს ლეიბლი გამოაქვს, ვინახავთ mode-ს)
+        self._sort_modes = [
+            (SORT_DATE_DESC, self.tr("sort_date_desc")),
+            (SORT_MATCHES, self.tr("sort_matches")),
+            (SORT_DATE_ASC, self.tr("sort_date_asc")),
+            (SORT_NAME, self.tr("sort_name")),
+        ]
+        self._sort_by_label = {lbl: mode for mode, lbl in self._sort_modes}
+        saved_mode = st.get("sort", SORT_DATE_DESC)
+        saved_label = next((lbl for mode, lbl in self._sort_modes
+                            if mode == saved_mode), self._sort_modes[0][1])
+        self.sort_label_var = tk.StringVar(value=saved_label)
+        sort_combo = ttk.Combobox(srow, textvariable=self.sort_label_var,
+                                  state="readonly", width=20,
+                                  values=[lbl for _m, lbl in self._sort_modes])
+        sort_combo.pack(side="left", padx=(6, 14))
+        sort_combo.bind("<<ComboboxSelected>>", lambda _e: self._render_results())
+        add_tip(sort_combo, self.tr("tip_sort"))
+
+        self.group_var = tk.BooleanVar(value=st.get("group", True))
+        add_tip(ttk.Checkbutton(srow, text=self.tr("group_cat"),
+                                variable=self.group_var,
+                                command=self._render_results),
+                self.tr("tip_group")).pack(side="left")
+        add_tip(ttk.Button(srow, text=self.tr("cat_edit"),
+                           command=self._open_categories_file),
+                self.tr("tip_cat_edit")).pack(side="left", padx=(14, 0))
 
         # --- ქვედა ღილაკები ---
         # panes-ზე ადრე და side="bottom"-ით: გაფართოებადი პანელი მთელ თავისუფალ
@@ -274,12 +346,15 @@ class DocSearchTool(ToolFrame):
         panes.pack(fill="both", expand=True)
 
         left = ttk.Frame(panes)
-        self.tree = ttk.Treeview(left, columns=("hits",), show="tree headings",
-                                 selectmode="browse")
+        self.tree = ttk.Treeview(left, columns=("date", "hits"),
+                                 show="tree headings", selectmode="browse")
         self.tree.heading("#0", text=self.tr("col_file"))
+        self.tree.heading("date", text=self.tr("col_date"))
         self.tree.heading("hits", text=self.tr("col_hits"))
-        self.tree.column("#0", width=250, stretch=True)
-        self.tree.column("hits", width=80, anchor="e", stretch=False)
+        self.tree.column("#0", width=220, stretch=True)
+        self.tree.column("date", width=88, anchor="center", stretch=False)
+        self.tree.column("hits", width=72, anchor="e", stretch=False)
+        self.tree.tag_configure("cat", font=("Segoe UI", 10, "bold"))
         tsb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=tsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -318,6 +393,8 @@ class DocSearchTool(ToolFrame):
         st["query"] = self.query_var.get()
         st["mode"] = self.mode_var.get()
         st["lat2geo"] = self.lat2geo_var.get()
+        st["sort"] = self._current_sort_mode()
+        st["group"] = self.group_var.get()
 
     # ---- ლათინური→ქართული საძიებო ტექსტი ----
     def _effective_query(self):
@@ -454,22 +531,107 @@ class DocSearchTool(ToolFrame):
 
         self.status.set(self.tr("searching"))
         self.update_idletasks()
-        self.results = search(self.db_path, query, self.mode_var.get())
-
-        self.tree.delete(*self.tree.get_children())
+        rules = self._load_category_rules()
+        self.results = search(self.db_path, query, self.mode_var.get(),
+                              category_rules=rules)
+        # თითო შედეგს ვანიჭებთ სტაბილურ ინდექსს (iid → self.results-ის პოზიცია),
+        # რომ დახარისხების/დაჯგუფების მიუხედავად არჩევა სწორად მუშაობდეს.
         for i, r in enumerate(self.results):
-            self.tree.insert("", "end", iid=str(i), text=r["name"],
-                             values=(r["count"],))
+            r["_idx"] = i
+
+        self._render_results()
 
         total = sum(r["count"] for r in self.results)
         if self.results:
             self.status.set(self.tr("found", f=len(self.results), n=total))
-            self.tree.selection_set("0")
-            self.tree.focus("0")
         else:
             self.status.set(self.tr("not_found", q=query))
             self._show_note(self.tr("not_found", q=query))
         self.app.log(self.status.get())
+
+    # ---- სორტირება / კატეგორიზაცია ----
+    def _current_sort_mode(self):
+        return self._sort_by_label.get(self.sort_label_var.get(), SORT_MATCHES)
+
+    def _fmt_date(self, iso):
+        """'YYYY-MM-DD' → 'DD.MM.YYYY' (ცარიელი თუ არაა)."""
+        if not iso:
+            return ""
+        y, m, d = iso.split("-")
+        return "{}.{}.{}".format(d, m, y)
+
+    def _render_results(self):
+        """შედეგების ხის აგება მიმდინარე დახარისხებით/დაჯგუფებით (ხელახლა ძებნის
+        გარეშე). ფაილის iid = მისი პოზიცია self.results-ში (_idx)."""
+        self.tree.delete(*self.tree.get_children())
+        if not getattr(self, "results", None):
+            return
+        ordered = sort_results(self.results, self._current_sort_mode())
+
+        def add_file(parent, r):
+            self.tree.insert(parent, "end", iid=str(r["_idx"]), text=r["name"],
+                             values=(self._fmt_date(r.get("doc_date")), r["count"]))
+
+        first_iid = str(ordered[0]["_idx"]) if ordered else None
+        if self.group_var.get():
+            groups = {}
+            order = []
+            for r in ordered:
+                cat = r.get("category") or self.tr("uncategorized")
+                if cat not in groups:
+                    groups[cat] = []
+                    order.append(cat)
+            for r in ordered:
+                groups[r.get("category") or self.tr("uncategorized")].append(r)
+            for cat in order:
+                items = groups[cat]
+                pid = "cat::" + cat
+                self.tree.insert("", "end", iid=pid, open=True, tags=("cat",),
+                                 text="{}  ({})".format(cat, len(items)),
+                                 values=("", ""))
+                for r in items:
+                    add_file(pid, r)
+        else:
+            for r in ordered:
+                add_file("", r)
+
+        if first_iid is not None:
+            self.tree.selection_set(first_iid)
+            self.tree.focus(first_iid)
+            self.tree.see(first_iid)
+
+    # ---- კატეგორიის წესები (ლოკალური, რედაქტირებადი ფაილი) ----
+    def _ensure_categories_file(self):
+        if not os.path.exists(CATEGORIES_FILE):
+            try:
+                with open(CATEGORIES_FILE, "w", encoding="utf-8") as f:
+                    f.write(DEFAULT_CATEGORIES)
+            except OSError:
+                pass
+
+    def _load_category_rules(self):
+        """doc_categories.txt-ის წაკითხვა → წესები. თუ ფაილი არაა — ნაგულისხმევი."""
+        self._ensure_categories_file()
+        for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252"):
+            try:
+                with open(CATEGORIES_FILE, "r", encoding=enc) as f:
+                    return parse_category_rules(f.read())
+            except (UnicodeDecodeError, OSError):
+                continue
+        return parse_category_rules(DEFAULT_CATEGORIES)
+
+    def _open_categories_file(self):
+        """კატეგორიების ფაილის გახსნა რედაქტირებისთვის (Notepad და ა.შ.)."""
+        self._ensure_categories_file()
+        try:
+            if sys.platform == "win32":
+                os.startfile(CATEGORIES_FILE)             # noqa: S606
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", CATEGORIES_FILE])
+            else:
+                subprocess.Popen(["xdg-open", CATEGORIES_FILE])
+        except Exception as e:                            # noqa: BLE001
+            messagebox.showerror(self.tr("err"), str(e))
 
     # ---- preview ----
     def _selected(self):
@@ -566,11 +728,14 @@ class DocSearchTool(ToolFrame):
         ws = wb.active
         ws.title = "search"
         ws.append(list(self.tr("exp_cols")))
-        for r in self.results:
+        # ექსპორტი მიმდინარე დახარისხებით (ისე, როგორც სიაშია)
+        for r in sort_results(self.results, self._current_sort_mode()):
+            cat = r.get("category") or self.tr("uncategorized")
+            date = self._fmt_date(r.get("doc_date"))
             for hit in r["hits"]:
-                ws.append([r["name"], self._label(r, hit), r["count"],
-                           hit["snippet"], r["path"]])
-        for col, width in zip("ABCDE", (34, 10, 12, 90, 60)):
+                ws.append([cat, date, r["name"], self._label(r, hit),
+                           r["count"], hit["snippet"], r["path"]])
+        for col, width in zip("ABCDEFG", (18, 12, 34, 10, 12, 90, 60)):
             ws.column_dimensions[col].width = width
         try:
             wb.save(path)

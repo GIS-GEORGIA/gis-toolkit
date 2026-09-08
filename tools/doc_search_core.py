@@ -55,11 +55,139 @@ MAX_SNIPPET_SPAN = 400      # ერთი ამონარიდი ამა
 MAX_HITS_PER_FILE = 50      # UI-ის დასაცავად; საერთო რაოდენობა მაინც ითვლება
 
 # ინდექსის სქემის ვერსია — ცვლილებისას ქეში თავიდან შენდება
-SCHEMA_VERSION = 1
+# v2: დაემატა doc_date (ტექსტში ნახსენები თარიღი, სორტირებისთვის)
+SCHEMA_VERSION = 2
 
 MODE_PHRASE = "phrase"
 MODE_ALL = "all"
 MODE_ANY = "any"
+
+# სორტირების რეჟიმები (UI-ს გამოაქვს)
+SORT_MATCHES = "matches"      # ყველაზე მეტი დამთხვევა
+SORT_DATE_DESC = "date_desc"  # ახალი თარიღი ზემოთ
+SORT_DATE_ASC = "date_asc"    # ძველი თარიღი ზემოთ
+SORT_NAME = "name"            # სახელით
+
+
+# ---- თარიღის ამოღება (ქართული ტექსტიდან) -----------------------------------
+# თვის ძირი → ნომერი. ვამთხვევთ ძირს + ნებისმიერ ბოლოსართს („სექტემბრის“,
+# „სექტემბერს“, „სექტემბერი“…), რომ ბრუნვები დაიჭიროს.
+GEO_MONTH_STEMS = [
+    ("იანვ", 1), ("თებერვ", 2), ("მარტ", 3), ("აპრილ", 4), ("მაის", 5),
+    ("ივნის", 6), ("ივლის", 7), ("აგვისტ", 8), ("სექტემბ", 9),
+    ("ოქტომბ", 10), ("ნოემბ", 11), ("დეკემბ", 12),
+]
+_MONTH_ALT = "|".join(stem for stem, _ in GEO_MONTH_STEMS)
+_MONTH_NUM = {stem: num for stem, num in GEO_MONTH_STEMS}
+
+# „2026 წლის 01 სექტემბრის“ / „2026 წ. 1 სექტემბერს“
+_RE_GEO_YMD = re.compile(
+    r"(\d{4})\s*წ(?:ლის|\.)?\s*(\d{1,2})\s*(" + _MONTH_ALT + r")[ა-ჰ]*")
+# „01 სექტემბერი 2026“ / „1 სექტემბრის 2026 წ.“
+_RE_GEO_DMY = re.compile(
+    r"(\d{1,2})\s*(" + _MONTH_ALT + r")[ა-ჰ]*\s*(\d{4})")
+# ISO: 2026-09-01
+_RE_ISO = re.compile(r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})")
+# რიცხვითი, დღე-პირველი: 01.09.2026
+_RE_DMY = re.compile(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})")
+
+
+def _mk_date(y, m, d):
+    """(წელი, თვე, დღე) → 'YYYY-MM-DD' ან None თუ არავალიდურია."""
+    try:
+        y, m, d = int(y), int(m), int(d)
+    except (TypeError, ValueError):
+        return None
+    if not (1990 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31):
+        return None
+    return "{:04d}-{:02d}-{:02d}".format(y, m, d)
+
+
+def extract_dates(text):
+    """ტექსტში ნახსენები ყველა თარიღი (უნიკალური, დალაგებული) — 'YYYY-MM-DD'.
+
+    ჭერს ქართულ ფორმებს („2026 წლის 01 სექტემბრის“, „01 სექტემბერი 2026“) და
+    რიცხვითს (01.09.2026, 2026-09-01). საკადასტრო კოდები (71.63.80.094) და
+    სხვა ორ-ციფრიან-ბოლოიანი რიცხვები არ ეთვლება — წელი 4-ციფრიანი უნდა იყოს.
+    """
+    found = set()
+    for y, d, mon in _RE_GEO_YMD.findall(text or ""):
+        iso = _mk_date(y, _MONTH_NUM[mon], d)
+        if iso:
+            found.add(iso)
+    for d, mon, y in _RE_GEO_DMY.findall(text or ""):
+        iso = _mk_date(y, _MONTH_NUM[mon], d)
+        if iso:
+            found.add(iso)
+    for y, m, d in _RE_ISO.findall(text or ""):
+        iso = _mk_date(y, m, d)
+        if iso:
+            found.add(iso)
+    for d, m, y in _RE_DMY.findall(text or ""):
+        iso = _mk_date(y, m, d)
+        if iso:
+            found.add(iso)
+    return sorted(found)
+
+
+def latest_date(text):
+    """ტექსტში ნახსენები ყველაზე ახალი თარიღი ('YYYY-MM-DD') ან None."""
+    dates = extract_dates(text)
+    return dates[-1] if dates else None
+
+
+# ---- კატეგორიზაცია (გამომგზავნი / ორგანიზაცია) -----------------------------
+def parse_category_rules(text):
+    """ტექსტური წესები → [(კატეგორია, (საკვ.სიტყვა, …)), …].
+
+    თითო ხაზი: ``კატეგორია = სიტყვა1, სიტყვა2`` (# — კომენტარი). საკვანძო
+    სიტყვები lower-case-დება. „=“-ის გარეშე ხაზი გამოტოვდება.
+    """
+    rules = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        cat, kw = line.split("=", 1)
+        cat = cat.strip()
+        keywords = tuple(k.strip().lower() for k in kw.split(",") if k.strip())
+        if cat and keywords:
+            rules.append((cat, keywords))
+    return rules
+
+
+def categorize(text, rules):
+    """ტექსტს პირველ დამთხვეულ კატეგორიას მიაკუთვნებს (ან None)."""
+    if not rules or not text:
+        return None
+    tl = text.lower()
+    for cat, keywords in rules:
+        if any(kw in tl for kw in keywords):
+            return cat
+    return None
+
+
+def sort_results(results, mode=SORT_MATCHES):
+    """ძებნის შედეგების დალაგება არჩეული რეჟიმით (ახალი სია)."""
+    if mode == SORT_DATE_DESC:      # ახალი ზემოთ; უთარიღოები ბოლოში
+        return sorted(results, key=lambda r: (r.get("doc_date") is None,
+                                              _neg(r.get("doc_date")),
+                                              r["name"].lower()))
+    if mode == SORT_DATE_ASC:       # ძველი ზემოთ; უთარიღოები ბოლოში
+        return sorted(results, key=lambda r: (r.get("doc_date") is None,
+                                              r.get("doc_date") or "",
+                                              r["name"].lower()))
+    if mode == SORT_NAME:
+        return sorted(results, key=lambda r: r["name"].lower())
+    return sorted(results, key=lambda r: (-r["count"], r["name"].lower()))
+
+
+def _neg(iso):
+    """'YYYY-MM-DD' → ისეთი გასაღები, რომ ჩვეულ ზრდად სორტში ახალი წინ მოვიდეს."""
+    if not iso:
+        return ""
+    # ციფრებს „ვაბრუნებთ“, რომ ascending key-ში დიდი თარიღი პატარად ჩაითვალოს
+    return "".join(chr(ord("9") - int(c)) if c.isdigit() else c for c in iso)
 
 
 # ---- ტექსტის ამოღება -------------------------------------------------------
@@ -231,9 +359,14 @@ def extract_text(path):
 
 # ---- ინდექსი (SQLite ქეში) -------------------------------------------------
 def open_index(db_path):
-    """ინდექსის ბაზის გახსნა/შექმნა."""
+    """ინდექსის ბაზის გახსნა/შექმნა (სქემის მიგრაციით)."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    row = conn.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
+    # სქემის ცვლილებისას ძველ ცხრილს ვშლით (ახალი სვეტებით ხელახლა შენდება)
+    if row is not None and row[0] != str(SCHEMA_VERSION):
+        conn.execute("DROP TABLE IF EXISTS files")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS files (
             path       TEXT PRIMARY KEY,
@@ -246,16 +379,15 @@ def open_index(db_path):
             unit       TEXT,
             status     TEXT,
             note       TEXT,
+            doc_date   TEXT,
             indexed_at REAL
         )""")
-    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-    row = conn.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
     if row is None:
         conn.execute("INSERT INTO meta (key, value) VALUES ('schema', ?)",
                      (str(SCHEMA_VERSION),))
-    elif row[0] != str(SCHEMA_VERSION):          # სქემა შეიცვალა — ქეში თავიდან
-        conn.execute("DELETE FROM files")
-        conn.execute("UPDATE meta SET value=? WHERE key='schema'", (str(SCHEMA_VERSION),))
+    elif row[0] != str(SCHEMA_VERSION):
+        conn.execute("UPDATE meta SET value=? WHERE key='schema'",
+                     (str(SCHEMA_VERSION),))
     conn.commit()
     return conn
 
@@ -328,16 +460,17 @@ def index_folder(folder, recursive, db_path, log, done, tr,
                 n_cached += 1
             else:
                 res = extract_text(path)
+                doc_date = latest_date(res["text"]) if res["text"] else None
                 conn.execute(
                     "INSERT OR REPLACE INTO files "
                     "(path, name, ext, mtime, size, text, anchors, unit, "
-                    " status, note, indexed_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    " status, note, doc_date, indexed_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (path, os.path.basename(path),
                      os.path.splitext(path)[1].lower(),
                      stat.st_mtime, stat.st_size, res["text"],
                      json.dumps(res["anchors"]), res["unit"],
-                     res["status"], res["note"], time.time()))
+                     res["status"], res["note"], doc_date, time.time()))
                 if prev is None:
                     n_new += 1
                 else:
@@ -505,13 +638,17 @@ def make_snippet(text, spans, context=CONTEXT):
 
 
 def search(db_path, query, mode=MODE_PHRASE, max_hits_per_file=MAX_HITS_PER_FILE,
-           cancel=None):
+           cancel=None, category_rules=None):
     """ინდექსში ძებნა → ფაილების სია დამთხვევებით.
 
     თითო ჩანაწერი:
-        {path, name, ext, unit, status, count, truncated, hits:[{label, snippet, hl}]}
-    ``count`` არის დამთხვევების **სრული** რაოდენობა, ``hits`` კი შეზღუდულია
-    ``max_hits_per_file``-ით (``truncated`` აჩვენებს, მოიჭრა თუ არა).
+        {path, name, ext, unit, status, count, truncated, doc_date, category,
+         hits:[{label, snippet, hl}]}
+    ``count`` — დამთხვევების **სრული** რაოდენობა; ``hits`` შეზღუდულია
+    ``max_hits_per_file``-ით. ``doc_date`` — ტექსტში ნახსენები ბოლო თარიღი
+    ('YYYY-MM-DD' ან None). ``category`` — ``category_rules``-ის მიხედვით
+    გამოთვლილი კატეგორია (ან None); წესები ცოცხლად მუშაობს, ხელახლა ინდექსაცია
+    არ სჭირდება.
     """
     regexes = parse_query(query, mode)
     if not regexes:
@@ -520,13 +657,13 @@ def search(db_path, query, mode=MODE_PHRASE, max_hits_per_file=MAX_HITS_PER_FILE
     conn = open_index(db_path)
     try:
         rows = conn.execute(
-            "SELECT path, name, ext, text, anchors, unit, status FROM files "
-            "WHERE status='ok' ORDER BY name COLLATE NOCASE").fetchall()
+            "SELECT path, name, ext, text, anchors, unit, status, doc_date "
+            "FROM files WHERE status='ok' ORDER BY name COLLATE NOCASE").fetchall()
     finally:
         conn.close()
 
     results = []
-    for path, name, ext, text, anchors_json, unit, status in rows:
+    for path, name, ext, text, anchors_json, unit, status, doc_date in rows:
         if cancel and cancel():
             break
         if not text:
@@ -555,10 +692,11 @@ def search(db_path, query, mode=MODE_PHRASE, max_hits_per_file=MAX_HITS_PER_FILE
             "path": path, "name": name, "ext": ext, "unit": unit,
             "status": status, "count": len(spans), "hits": hits,
             "truncated": len(groups) > max_hits_per_file,
+            "doc_date": doc_date,
+            "category": categorize(text, category_rules) if category_rules else None,
         })
 
-    results.sort(key=lambda r: (-r["count"], r["name"].lower()))
-    return results
+    return sort_results(results, SORT_MATCHES)
 
 
 def index_stats(db_path):

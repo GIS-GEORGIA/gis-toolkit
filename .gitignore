@@ -26,6 +26,9 @@ doc_search_index.db
 doc_search_index.db-wal
 doc_search_index.db-shm
 
+# --- დოკუმენტებში ძებნა: კატეგორიის წესები (ლოკალური, მომხმარებლის) ---
+doc_categories.txt
+
 # --- ArcGIS მეტამონაცემები: შეიცავს ლოკალურ გზას/username-ს ---
 *.shp.xml
 
