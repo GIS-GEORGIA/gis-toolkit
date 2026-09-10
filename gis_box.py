@@ -98,8 +98,6 @@ TR = {
     "rename_name":  {"en": "Rename → Latin",       "ka": "სახელების გადარქმევა"},
     "shpcoord_name":{"en": "Shp → coordinates",     "ka": "Shp → კოორდინატები"},
     "gdb2pg_name":  {"en": "GDB → PostGIS",         "ka": "GDB → PostGIS"},
-    "docsearch_name": {"en": "Document search",     "ka": "დოკუმენტებში ძებნა"},
-    "gather_name":  {"en": "Collect files",         "ka": "ფაილების შეგროვება"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
     "tool_dep_hint":{"en": "A required package is probably missing. Install:",
@@ -433,16 +431,6 @@ class GisBoxApp(tk.Tk):
             "name_en": TR["gdb2pg_name"]["en"], "name_ka": TR["gdb2pg_name"]["ka"],
             "factory": self._make_gdb2pg_tool,
         })
-        specs.append({
-            "name_en": TR["docsearch_name"]["en"],
-            "name_ka": TR["docsearch_name"]["ka"],
-            "factory": self._make_docsearch_tool,
-        })
-        specs.append({
-            "name_en": TR["gather_name"]["en"],
-            "name_ka": TR["gather_name"]["ka"],
-            "factory": self._make_gather_tool,
-        })
         return specs
 
     def _make_parcel_tool(self, master):
@@ -464,14 +452,6 @@ class GisBoxApp(tk.Tk):
     def _make_gdb2pg_tool(self, master):
         from tools.gdb2postgis import Gdb2PostgisTool
         return Gdb2PostgisTool(master, self)
-
-    def _make_docsearch_tool(self, master):
-        from tools.doc_search import DocSearchTool
-        return DocSearchTool(master, self)
-
-    def _make_gather_tool(self, master):
-        from tools.file_gather import FileGatherTool
-        return FileGatherTool(master, self)
 
     def _instantiate_tool(self, idx):
         """ხელსაწყოს frame-ის შექმნა; შეცდომისას — მეგობრული error frame."""

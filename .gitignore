@@ -21,14 +21,6 @@ gdb2postgis_audit.db
 # --- GDB → PostGIS ფონური (headless) გაშვების ლოგი ---
 gdb2postgis_run.log
 
-# --- დოკუმენტებში ძებნა: ინდექსი (შეიცავს დოკუმენტების სრულ ტექსტს!) ---
-doc_search_index.db
-doc_search_index.db-wal
-doc_search_index.db-shm
-
-# --- დოკუმენტებში ძებნა: კატეგორიის წესები (ლოკალური, მომხმარებლის) ---
-doc_categories.txt
-
 # --- ArcGIS მეტამონაცემები: შეიცავს ლოკალურ გზას/username-ს ---
 *.shp.xml
 
