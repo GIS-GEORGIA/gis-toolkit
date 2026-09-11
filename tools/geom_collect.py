@@ -20,7 +20,10 @@ from tkinter import ttk, filedialog, messagebox
 
 from tools.base import ToolFrame
 from tools.tooltip import add_tip
-from tools.geom_collect_core import iter_geometry_files, collect_to_geopackage
+from tools.geom_collect_core import (
+    iter_geometry_files, collect_to_geopackage,
+    VECTOR_FORMATS, GEOM_EXT, normalize_exts,
+)
 
 
 # ---- CRS არჩევანი: label → EPSG (None = ავტომატური) ------------------------
@@ -35,18 +38,38 @@ CRS_CHOICES = [
 CTR = {
     "heading":   {"en": "Collect geometry → GeoPackage",
                   "ka": "გეომეტრიების შეგროვება → GeoPackage"},
-    "desc":      {"en": "Pick a source folder; every SHP/DXF/DWG inside it (and "
-                        "its subfolders) is read and all geometries are merged "
-                        "into ONE GeoPackage with three layers: points, lines, "
-                        "polygons. DWG needs GDAL's CAD driver (QGIS/OSGeo4W); "
-                        "files it cannot read are skipped and logged.",
-                  "ka": "აირჩიე საწყისი საქაღალდე; მასში (და ქვესაქაღალდეებში) "
-                        "ყველა SHP/DXF/DWG იკითხება და გეომეტრიები გროვდება ერთ "
+    "desc":      {"en": "Pick a source folder and tick which vector formats to "
+                        "look for; every matching file inside it (and its "
+                        "subfolders) is read and all geometries are merged into "
+                        "ONE GeoPackage with three layers: points, lines, "
+                        "polygons. Any GDAL vector format is supported. DWG needs "
+                        "GDAL's CAD driver (QGIS/OSGeo4W); files it cannot read "
+                        "are skipped and logged.",
+                  "ka": "აირჩიე საწყისი საქაღალდე და მონიშნე რომელი ვექტორული "
+                        "ფორმატები მოძებნოს; მასში (და ქვესაქაღალდეებში) ყველა "
+                        "შესაბამისი ფაილი იკითხება და გეომეტრიები გროვდება ერთ "
                         "GeoPackage-ში სამ შრედ: წერტილები, ხაზები, პოლიგონები. "
-                        "DWG-ს სჭირდება GDAL-ის CAD დრაივერი (QGIS/OSGeo4W); "
-                        "წაუკითხავი ფაილები გამოტოვდება და ლოგში აისახება."},
+                        "მხარდაჭერილია ნებისმიერი GDAL ვექტორული ფორმატი. DWG-ს "
+                        "სჭირდება GDAL-ის CAD დრაივერი (QGIS/OSGeo4W); წაუკითხავი "
+                        "ფაილები გამოტოვდება და ლოგში აისახება."},
     "source":    {"en": "Source:", "ka": "საწყისი:"},
     "out":       {"en": "Output .gpkg:", "ka": "გამომავალი .gpkg:"},
+
+    # ფორმატების არჩევა
+    "formats":   {"en": "Formats to search", "ka": "მოსაძებნი ფორმატები"},
+    "fmt_all":   {"en": "Select all", "ka": "ყველა"},
+    "fmt_none":  {"en": "Clear", "ka": "გასუფთავება"},
+    "fmt_other": {"en": "Other:", "ka": "სხვა:"},
+    "warn_fmt":  {"en": "Select at least one format.",
+                  "ka": "მონიშნე მინიმუმ ერთი ფორმატი."},
+    "tip_fmt_all": {"en": "Check every listed format.",
+                    "ka": "ყველა ფორმატის მონიშვნა."},
+    "tip_fmt_none": {"en": "Uncheck every format.",
+                     "ka": "ყველა ფორმატის მოხსნა."},
+    "tip_fmt_other": {"en": "Extra extensions to include, comma-separated "
+                            "(e.g. “geojson, tab”). Any GDAL vector format works.",
+                      "ka": "დამატებითი გაფართოებები, მძიმით (მაგ. „geojson, tab“). "
+                            "ნებისმიერი GDAL ვექტორული ფორმატი მუშაობს."},
     "crs":       {"en": "Output CRS:", "ka": "გამომავალი CRS:"},
     "crs_auto":  {"en": "auto (first found)", "ka": "ავტომატური (პირველი ნაპოვნი)"},
     "browse":    {"en": "Browse…", "ka": "დათვალიერება…"},
@@ -164,6 +187,39 @@ class GeomCollectTool(ToolFrame):
                 self.tr("tip_crs")).grid(row=2, column=1, sticky="w",
                                          padx=(6, 6), pady=(6, 0))
 
+        # --- მოსაძებნი ფორმატები (მონიშვნა) ---
+        saved_exts = set(st.get("exts") or saved.get("exts") or GEOM_EXT)
+        fmt = ttk.LabelFrame(self, text=self.tr("formats"))
+        fmt.pack(fill="x", pady=(8, 4))
+        btns = ttk.Frame(fmt)
+        btns.pack(fill="x", padx=6, pady=(4, 2))
+        add_tip(ttk.Button(btns, text=self.tr("fmt_all"), width=10,
+                           command=lambda: self._set_all_formats(True)),
+                self.tr("tip_fmt_all")).pack(side="left")
+        add_tip(ttk.Button(btns, text=self.tr("fmt_none"), width=12,
+                           command=lambda: self._set_all_formats(False)),
+                self.tr("tip_fmt_none")).pack(side="left", padx=(6, 0))
+
+        grid_f = ttk.Frame(fmt)
+        grid_f.pack(fill="x", padx=6, pady=(0, 4))
+        self.fmt_vars = []                 # [(BooleanVar, (ext,…)), …]
+        cols = 3
+        for i, (label, exts) in enumerate(VECTOR_FORMATS):
+            var = tk.BooleanVar(value=any(e in saved_exts for e in exts))
+            ttk.Checkbutton(grid_f, text=label, variable=var).grid(
+                row=i // cols, column=i % cols, sticky="w", padx=(0, 14), pady=1)
+            self.fmt_vars.append((var, exts))
+
+        other = ttk.Frame(fmt)
+        other.pack(fill="x", padx=6, pady=(0, 6))
+        ttk.Label(other, text=self.tr("fmt_other")).pack(side="left")
+        # „სხვა“ = მონიშნული ცნობილი ფორმატების გარეთ დარჩენილი გაფართოებები
+        known = {e for _lbl, exts in VECTOR_FORMATS for e in exts}
+        extra = [e for e in saved_exts if e not in known]
+        self.other_var = tk.StringVar(value=", ".join(sorted(extra)))
+        add_tip(ttk.Entry(other, textvariable=self.other_var, width=36),
+                self.tr("tip_fmt_other")).pack(side="left", padx=(6, 0))
+
         # პარამეტრები + ღილაკები
         opt = ttk.Frame(self)
         opt.pack(fill="x", pady=(10, 4))
@@ -199,6 +255,25 @@ class GeomCollectTool(ToolFrame):
         st["out"] = self.out_var.get()
         st["recursive"] = self.recursive_var.get()
         st["crs_epsg"] = self._crs_by_label.get(self.crs_var.get())
+        st["exts"] = list(self._selected_exts())
+
+    # ---- ფორმატები ----
+    def _set_all_formats(self, value):
+        for var, _exts in self.fmt_vars:
+            var.set(value)
+
+    def _selected_exts(self):
+        """მონიშნული ფორმატები + „სხვა“ ველი → გაფართოებების tuple (უნიკ.)."""
+        out = []
+        for var, exts in self.fmt_vars:
+            if var.get():
+                for e in exts:
+                    if e not in out:
+                        out.append(e)
+        for e in normalize_exts(self.other_var.get()):
+            if e not in out:
+                out.append(e)
+        return tuple(out)
 
     # ---- არჩევა ----
     def _pick_src(self):
@@ -244,14 +319,18 @@ class GeomCollectTool(ToolFrame):
         if not out.lower().endswith(".gpkg"):
             out += ".gpkg"
             self.out_var.set(out)
-        return source, out, self._crs_by_label.get(self.crs_var.get())
+        exts = self._selected_exts()
+        if not exts:
+            messagebox.showwarning("GIS_BOX", self.tr("warn_fmt"))
+            return None
+        return source, out, self._crs_by_label.get(self.crs_var.get()), exts
 
     def _count(self):
         v = self._validate()
         if not v:
             return
-        source, _out, _epsg = v
-        n = len(iter_geometry_files(source, self.recursive_var.get()))
+        source, _out, _epsg, exts = v
+        n = len(iter_geometry_files(source, exts, self.recursive_var.get()))
         msg = self.tr("count_n" if n else "count_none", n=n)
         self.status.set(msg)
         self.app.log(msg)
@@ -263,15 +342,17 @@ class GeomCollectTool(ToolFrame):
         v = self._validate()
         if not v:
             return
-        source, out, epsg = v
-        files = iter_geometry_files(source, self.recursive_var.get())
+        source, out, epsg, exts = v
+        files = iter_geometry_files(source, exts, self.recursive_var.get())
         if not files:
             messagebox.showinfo("GIS_BOX", self.tr("count_none"))
             return
         if not messagebox.askyesno(self.tr("confirm_t"),
                                    self.tr("confirm_m", n=len(files), out=out)):
             return
-        self.app.set_tool_config(self.tid, {"source": source, "out": out})
+        self.app.set_tool_config(self.tid,
+                                 {"source": source, "out": out,
+                                  "exts": list(exts)})
 
         self.busy = True
         self._cancel_event.clear()

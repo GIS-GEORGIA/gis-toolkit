@@ -12,7 +12,49 @@
 
 import os
 
+# ნაგულისხმევად მონიშნული ფორმატები (თავდაპირველი მოთხოვნა)
 GEOM_EXT = (".shp", ".dxf", ".dwg")
+
+# დირექტორია-დატასეტები (ფაილი კი არა, საქაღალდეა) — მათში არ ვიძვრებით
+DIR_DATASETS = (".gdb",)
+
+# GDAL-ის ვექტორული ფორმატები გაფართოებით — UI-ის მოსანიშნი სია.
+# (label, (გაფართოებები…)). read/collect ისედაც ნებისმიერ GDAL ფორმატს კითხულობს;
+# ეს სია მხოლოდ ფაილების პოვნის ფილტრია. სიაში რომ არ იყოს — „სხვა“ ველი არსებობს.
+VECTOR_FORMATS = [
+    ("ESRI Shapefile (.shp)", (".shp",)),
+    ("AutoCAD DXF (.dxf)", (".dxf",)),
+    ("AutoCAD DWG (.dwg)", (".dwg",)),
+    ("GeoPackage (.gpkg)", (".gpkg",)),
+    ("GeoJSON (.geojson/.json)", (".geojson", ".json")),
+    ("KML / KMZ (.kml/.kmz)", (".kml", ".kmz")),
+    ("GML (.gml)", (".gml",)),
+    ("GPX (.gpx)", (".gpx",)),
+    ("MapInfo (.tab/.mif)", (".tab", ".mif")),
+    ("FlatGeobuf (.fgb)", (".fgb",)),
+    ("SpatiaLite / SQLite (.sqlite/.db)", (".sqlite", ".db")),
+    ("GeoParquet (.parquet)", (".parquet",)),
+    ("Microstation DGN (.dgn)", (".dgn",)),
+    ("File Geodatabase (.gdb)", (".gdb",)),
+    ("Personal Geodatabase (.mdb)", (".mdb",)),
+    ("OpenStreetMap (.osm/.pbf)", (".osm", ".pbf")),
+    ("S-57 (.000)", (".000",)),
+    ("CSV (.csv)", (".csv",)),
+]
+
+
+def normalize_exts(text):
+    """მძიმით/სფეისით გამოყოფილი გაფართოებები → ('.ext', …) (lower, უნიკ.)."""
+    out = []
+    for part in str(text or "").replace(",", " ").split():
+        e = part.strip().lower()
+        if not e:
+            continue
+        if not e.startswith("."):
+            e = "." + e
+        if e not in out:
+            out.append(e)
+    return tuple(out)
 
 # geopandas/shapely-ის geom_type სტრიქონები → სამი კალათა
 POINT_TYPES = {"Point", "MultiPoint"}
@@ -36,19 +78,36 @@ def classify_geom_type(name):
     return None
 
 
-def iter_geometry_files(folder, recursive=True):
-    """საქაღალდის ხეში ყველა SHP/DXF/DWG (დალაგებული, დროებითების გარეშე)."""
+def iter_geometry_files(folder, exts=GEOM_EXT, recursive=True):
+    """საქაღალდის ხეში მითითებული გაფართოების ვექტორული ფაილები (დალაგებული).
+
+    ``exts`` — გაფართოებების tuple/set (მაგ. ('.shp', '.gpkg')). დირექტორია-
+    დატასეტები (``.gdb``) საქაღალდედ იძებნება და მათში აღარ ვიძვრებით.
+    დროებითი (``~$``) და ფარული ფაილები/საქაღალდეები გამოტოვდება.
+    """
+    exts = tuple(e.lower() for e in exts)
+    file_exts = tuple(e for e in exts if e not in DIR_DATASETS)
+    dir_exts = tuple(e for e in exts if e in DIR_DATASETS)
     found = []
     for root, dirs, names in os.walk(folder):
-        dirs[:] = sorted(d for d in dirs if not d.startswith((".", "~$")))
+        keep = []
+        for d in sorted(dirs):
+            if d.startswith((".", "~$")):
+                continue
+            low = d.lower()
+            if dir_exts and low.endswith(dir_exts):
+                found.append(os.path.join(root, d))    # დატასეტი — არ ჩავიხედოთ
+            else:
+                keep.append(d)
+        dirs[:] = keep
         for name in sorted(names):
             if name.startswith("~$"):
                 continue
-            if name.lower().endswith(GEOM_EXT):
+            if file_exts and name.lower().endswith(file_exts):
                 found.append(os.path.join(root, name))
         if not recursive:
             break
-    return found
+    return sorted(found)
 
 
 def _to_multi(geom):
