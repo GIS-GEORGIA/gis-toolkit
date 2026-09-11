@@ -25,6 +25,7 @@ GIS_BOX holds **spatial / GIS** tools only. Office-document tools (including
 | **სახელების გადარქმევა** / Rename → Latin | საქაღალდის ქართულ-სახელიან shapefile-ებს გადაარქმევს ლათინურად (სფეისი/სიმბოლო → `_`), წინასწარი სიით. ასევე ამოწმებს რომელ shapefile-ში დევს მასალა და რომელი ცარიელია. |
 | **Shp → კოორდინატები** / Shp → coordinates | წერტილოვანი shapefile-იდან კითხულობს X/Y-ს UTM ზონით (37/38, .prj-დან ან ხელით), წინასწარი ცხრილით; გააქვს დაფორმატებულ Excel-ში — ტექსტური ქუდი, `№/X/Y`, არჩევითი „გადაკვეთის კუთხე“ (°), center+borders. **Batch** — საქაღალდის ყველა წერტილოვანი shapefile ერთბაშად. |
 | **GDB → PostGIS** / GDB → PostGIS | ატანს ESRI Geodatabase-ის (`.gdb`/`.mdb`) შრეებს PostgreSQL/PostGIS-ში `ogr2ogr`-ით — შრეების არჩევა, კავშირის შემოწმება, რეჟიმები (overwrite/append/update), რეპროექცია, **ინკრემენტული სინქრონი**, **განრიგი** და **ისტორია/აუდიტი**. სჭირდება GDAL (QGIS/OSGeo4W) და PostGIS ბაზა. → იხ. [ცალკე სექცია](#gdb--postgis). |
+| **გეომეტრიების შეგროვება** / Geometry → GeoPackage | საქაღალდის ხეში პოულობს ყველა `.shp`/`.dxf`/`.dwg`-ს, კითხულობს გეომეტრიებს და აერთიანებს **ერთ GeoPackage-ში სამ შრედ**: წერტილები, ხაზები, პოლიგონები (Multi-გეომეტრიად, `src_file`/`src_layer`/`src_type` ველებით). გამომავალი CRS — ავტომატური (პირველი ნაპოვნი) ან UTM 37N/38N. ფონურ ნაკადში, დათვლა/გაუქმებით. DWG-ს სჭირდება GDAL-ის CAD დრაივერი (QGIS/OSGeo4W); წაუკითხავი ფაილი გამოტოვდება და ლოგში აისახება. |
 
 ---
 
@@ -160,6 +161,8 @@ GIS_BOX/
 │  ├─ shp_coords.py          # Shp → კოორდინატები (Excel, batch)
 │  ├─ gdb2postgis.py         # GDB → PostGIS (tkinter UI)
 │  ├─ gdb2postgis_core.py    # ↳ ძრავა (ogr2ogr, GUI-free; MIT, vendored)
+│  ├─ geom_collect.py        # გეომეტრიების შეგროვება → GeoPackage (tkinter UI)
+│  ├─ geom_collect_core.py   # ↳ წაკითხვა/კლასიფიკაცია/ჩაწერა (GUI-free)
 │  ├─ coord_tool.py          # კოორდინატების ამომღების wrapper
 │  ├─ coordextract/          # OCR + გეო-რეფერენსის პაკეტი
 │  ├─ translit.py            # ქართული→ლათინური (სუფთა ლოგიკა)
