@@ -12,6 +12,7 @@ datas = [
     ("gis_box.ico", "."),
     ("gis_box.png", "."),
     ("config.example.txt", "."),
+    ("map_services.txt", "."),
     ("tools/coordextract/icon.ico", "tools/coordextract"),
 ]
 binaries = []

@@ -6,12 +6,12 @@ A small collection of GIS tools in one window (tkinter).
 ინტერფეისი **ორენოვანია** — ქართული / English (ზედა ზოლის გადამრთველი).
 The UI is **bilingual** — Georgian / English (top-bar switch).
 
-GIS_BOX-ში მხოლოდ **სივრცითი / GIS** ხელსაწყოებია. საოფისე-დოკუმენტური ხელსაწყოები
-(მათ შორის **დოკუმენტებში ძებნა** და **ფაილების შეგროვება**) გადატანილია ცალკე
-პროექტში — [Toolbox](../Toolbox).
+GIS_BOX-ში მხოლოდ **სივრცითი / GIS** ხელსაწყოებია — მათ შორის **რუკის სერვისები**.
+საოფისე-დოკუმენტური ხელსაწყოები (**დოკუმენტებში ძებნა**, **ფაილების შეგროვება**)
+ცალკე პროექტშია — [Toolbox](../Toolbox).
 
-GIS_BOX holds **spatial / GIS** tools only. Office-document tools (including
-**Document search** and **Collect files**) live in a separate project — [Toolbox](../Toolbox).
+GIS_BOX holds **spatial / GIS** tools only — Map services included. Office-document
+tools (Document search, Collect files) live in a separate project — [Toolbox](../Toolbox).
 
 ---
 
@@ -26,6 +26,7 @@ GIS_BOX holds **spatial / GIS** tools only. Office-document tools (including
 | **Shp → კოორდინატები** / Shp → coordinates | წერტილოვანი shapefile-იდან კითხულობს X/Y-ს UTM ზონით (37/38, .prj-დან ან ხელით), წინასწარი ცხრილით; გააქვს დაფორმატებულ Excel-ში — ტექსტური ქუდი, `№/X/Y`, არჩევითი „გადაკვეთის კუთხე“ (°), center+borders. **Batch** — საქაღალდის ყველა წერტილოვანი shapefile ერთბაშად. |
 | **GDB → PostGIS** / GDB → PostGIS | ატანს ESRI Geodatabase-ის (`.gdb`/`.mdb`) შრეებს PostgreSQL/PostGIS-ში `ogr2ogr`-ით — შრეების არჩევა, კავშირის შემოწმება, რეჟიმები (overwrite/append/update), რეპროექცია, **ინკრემენტული სინქრონი**, **განრიგი** და **ისტორია/აუდიტი**. სჭირდება GDAL (QGIS/OSGeo4W) და PostGIS ბაზა. → იხ. [ცალკე სექცია](#gdb--postgis). |
 | **გეომეტრიების შეგროვება** / Geometry → GeoPackage | საქაღალდის ხეში პოულობს **მონიშნული ვექტორული ფორმატის** ფაილებს (SHP, DXF, DWG, GPKG, GeoJSON, KML, GML, MapInfo, .gdb და სხვ. — **ნებისმიერი GDAL ვექტორული ფორმატი**, `+ სხვა` ველით), კითხულობს გეომეტრიებს და აერთიანებს **ერთ GeoPackage-ში სამ შრედ**: წერტილები, ხაზები, პოლიგონები (Multi-გეომეტრიად, `src_file`/`src_layer`/`src_type` ველებით). გამომავალი CRS — ავტომატური (პირველი ნაპოვნი) ან UTM 37N/38N. ფონურ ნაკადში, დათვლა/გაუქმებით. DWG-ს სჭირდება GDAL-ის CAD დრაივერი (QGIS/OSGeo4W); წაუკითხავი ფაილი გამოტოვდება და ლოგში აისახება. |
+| **რუკის სერვისები** / Map services | tile / WMS სერვისების URL-ები (Google basemaps, ორთოფოტო, NAPR) — ArcMap / QGIS-ში ჩასასმელად, ერთი ღილაკით კოპირებით. სია იკითხება რეპოს ძირის `map_services.txt`-იდან (სახელის ხაზი, შემდეგ URL-ის ხაზი) — ახლის დამატება ფაილის რედაქტირებით, კოდის შეხების გარეშე. ზოგი სერვისი მოითხოვს VPN-ს / წვდომას. |
 
 ---
 
@@ -163,6 +164,7 @@ GIS_BOX/
 │  ├─ gdb2postgis_core.py    # ↳ ძრავა (ogr2ogr, GUI-free; MIT, vendored)
 │  ├─ geom_collect.py        # გეომეტრიების შეგროვება → GeoPackage (tkinter UI)
 │  ├─ geom_collect_core.py   # ↳ წაკითხვა/კლასიფიკაცია/ჩაწერა (GUI-free)
+│  ├─ map_services.py       # რუკის სერვისები (tile/WMS URL-ები, კოპირება)
 │  ├─ coord_tool.py          # კოორდინატების ამომღების wrapper
 │  ├─ coordextract/          # OCR + გეო-რეფერენსის პაკეტი
 │  ├─ translit.py            # ქართული→ლათინური (სუფთა ლოგიკა)
@@ -174,6 +176,7 @@ GIS_BOX/
 ├─ gis_box.spec              # PyInstaller — დამოუკიდებელი ბილდი
 ├─ shp/                      # შაბლონური shapefile-ები (ცარიელი / საჯარო UTM ბადე)
 ├─ config.example.txt        # კონფიგის ნიმუში (config.txt git-ignored)
+├─ map_services.txt          # რუკის სერვისების სია (სახელი / URL ხაზ-ხაზ)
 ├─ GIS_BOX.bat / .command / .desktop  # გამშვებები Windows / macOS / Linux
 ├─ requirements.txt          # ხელსაწყოების დამოკიდებულებები
 └─ requirements-dev.txt      # ტესტების/დეველოპმენტის დამოკიდებულებები

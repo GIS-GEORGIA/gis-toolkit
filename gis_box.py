@@ -99,6 +99,7 @@ TR = {
     "shpcoord_name":{"en": "Shp → coordinates",     "ka": "Shp → კოორდინატები"},
     "gdb2pg_name":  {"en": "GDB → PostGIS",         "ka": "GDB → PostGIS"},
     "geomcol_name": {"en": "Geometry → GeoPackage",  "ka": "გეომეტრიების შეგროვება"},
+    "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
     "tool_dep_hint":{"en": "A required package is probably missing. Install:",
@@ -436,6 +437,10 @@ class GisBoxApp(tk.Tk):
             "name_en": TR["geomcol_name"]["en"], "name_ka": TR["geomcol_name"]["ka"],
             "factory": self._make_geomcol_tool,
         })
+        specs.append({
+            "name_en": TR["map_name"]["en"], "name_ka": TR["map_name"]["ka"],
+            "factory": self._make_map_tool,
+        })
         return specs
 
     def _make_parcel_tool(self, master):
@@ -461,6 +466,10 @@ class GisBoxApp(tk.Tk):
     def _make_geomcol_tool(self, master):
         from tools.geom_collect import GeomCollectTool
         return GeomCollectTool(master, self)
+
+    def _make_map_tool(self, master):
+        from tools.map_services import MapServicesTool
+        return MapServicesTool(master, self)
 
     def _instantiate_tool(self, idx):
         """ხელსაწყოს frame-ის შექმნა; შეცდომისას — მეგობრული error frame."""
