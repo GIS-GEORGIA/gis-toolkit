@@ -39,8 +39,8 @@ DEFAULT_TEMPLATES = [
 
 # გარე ტექსტური ფაილი — თითო ხაზზე ერთი ქუდი (UTF-8). მომხმარებელი Notepad-ში
 # ამატებს ქართულ ქუდებს (სადაც აკრეფა ნორმალურად მუშაობს) და აქ ჩნდება.
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMPLATES_FILE = os.path.join(_APP_DIR, "shp_coords_templates.txt")
+from tools.apppaths import data_path
+TEMPLATES_FILE = data_path("shp_coords_templates.txt")
 
 # ---- განლაგების მუდმივები (მაგალითის მიხედვით) ----------------------------
 # ნედლი ბლოკი A:D. ასლი იწყება G-დან — 2 ცარიელი სვეტი (E, F) დაშორებით,

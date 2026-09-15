@@ -160,9 +160,9 @@ PTR = {
 # ---------------------------------------------------------------------------
 def _load_config():
     cfg = {"GDB": "", "LAYER": "RegParcels", "FIELD": "CADCODE"}
-    # tools/parcel_search.py -> ../ = GIS_BOX ძირი
-    app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(app_dir, "config.txt")
+    # config.txt — ჩასაწერ კონფიგ-საქაღალდეში (frozen: build-ს გარეთ, სტაბილური)
+    from tools.apppaths import config_read_path
+    path = config_read_path("config.txt")
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:

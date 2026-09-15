@@ -14,9 +14,10 @@ import os
 import json
 from datetime import datetime
 
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTINGS_FILE = os.path.join(_APP_DIR, "gis_box_settings.json")
-LOG_FILE = os.path.join(_APP_DIR, "gdb2postgis_run.log")
+# ჩასაწერ კონფიგ-საქაღალდეში (frozen: build-ს გარეთ, სტაბილური)
+from tools.apppaths import data_path
+SETTINGS_FILE = data_path("gis_box_settings.json")
+LOG_FILE = data_path("gdb2postgis_run.log")
 
 
 def _log(level, message):

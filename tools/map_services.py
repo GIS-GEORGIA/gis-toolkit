@@ -13,8 +13,10 @@ from tkinter import ttk
 from tools.base import ToolFrame
 from tools.tooltip import add_tip
 
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SERVICES_FILE = os.path.join(_APP_DIR, "map_services.txt")
+# map_services.txt — user-editable, ჩაშენებული ნაგულისხმევით. ჯერ ჩასაწერ
+# კონფიგ-საქაღალდეს ვამოწმებთ, თუ იქ არაა — ბანდლის ნაგულისხმევს.
+from tools.apppaths import config_read_path
+SERVICES_FILE = config_read_path("map_services.txt")
 
 EXTRA_SERVICES = [
     ("NAPR ორთოფოტო 2023 (WMS)",

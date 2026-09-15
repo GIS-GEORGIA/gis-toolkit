@@ -18,13 +18,19 @@ from tkinter import ttk, filedialog, messagebox
 
 # tools/ პაკეტი GIS_BOX-ის ძირშია — დავრწმუნდეთ, რომ იმპორტირებადია მაშინაც,
 # როცა აპლიკაცია სხვა სამუშაო დირექტორიიდან იშვება.
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 # ---- ბილიკები / paths ------------------------------------------------------
-DEFAULT_SHP_DIR = os.path.join(APP_DIR, "shp")
-SETTINGS_FILE = os.path.join(APP_DIR, "gis_box_settings.json")
+# RESOURCE_DIR — ჩაშენებული read-only რესურსები (frozen: _internal).
+# DATA_DIR — ჩასაწერი მომხმარებლის კონფიგი (frozen: build-ს გარეთ, სტაბილური).
+from tools.apppaths import resource_dir, data_dir
+RESOURCE_DIR = resource_dir()
+DATA_DIR = data_dir()
+APP_DIR = RESOURCE_DIR                       # უკუთავსებადობა (ხატულა, sys.path…)
+DEFAULT_SHP_DIR = os.path.join(RESOURCE_DIR, "shp")
+SETTINGS_FILE = os.path.join(DATA_DIR, "gis_box_settings.json")
 
 # ---- თარგმანები / translations --------------------------------------------
 LANGS = {"en": "English", "ka": "ქართული"}

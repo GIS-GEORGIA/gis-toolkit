@@ -12,10 +12,10 @@ import os
 import sqlite3
 from datetime import datetime
 
-# Vendored into GIS_BOX from the MIT gdb2postgis project; the audit DB lives
-# next to GIS_BOX (git-ignored) instead of the original per-user app dir.
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AUDIT_PATH = os.path.join(_APP_DIR, "gdb2postgis_audit.db")
+# Vendored into GIS_BOX from the MIT gdb2postgis project; the audit DB lives in
+# the writable config dir (git-ignored; frozen: outside the build, stable).
+from tools.apppaths import data_path
+AUDIT_PATH = data_path("gdb2postgis_audit.db")
 ID_CAP = 50000  # max feature IDs stored per layer run (count is always exact)
 
 

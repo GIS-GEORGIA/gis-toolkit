@@ -14,9 +14,9 @@ import json
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 
-# state ფაილი GIS_BOX-ის ძირშია (git-ignored) — tools/gdb2postgis_state.py -> ../
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATE_PATH = os.path.join(_APP_DIR, "gdb2postgis_sync_state.json")
+# state ფაილი — ჩასაწერ კონფიგ-საქაღალდეში (frozen: build-ს გარეთ, სტაბილური)
+from tools.apppaths import data_path
+STATE_PATH = data_path("gdb2postgis_sync_state.json")
 
 
 @dataclass
