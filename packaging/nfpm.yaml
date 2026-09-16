@@ -13,7 +13,7 @@ description: |
   template copy, parcel search, coordinate extractor, batch rename and
   shapefile-to-Excel coordinate export.
 vendor: GIS_BOX
-homepage: https://github.com/kapo-Toolkits/gis-toolkit
+homepage: https://github.com/GIS-GEORGIA/gis-toolkit
 license: MIT
 
 contents:

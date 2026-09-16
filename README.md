@@ -76,10 +76,10 @@ the audit history are kept in git-ignored files and never committed; passwords a
 
 ## ჩამოტვირთვა (მზა ბილდი) / Download (prebuilt)
 
-Python-ის გარეშე გასაშვებად იხილე **[Releases](https://github.com/kapo-Toolkits/gis-toolkit/releases)** —
+Python-ის გარეშე გასაშვებად იხილე **[Releases](https://github.com/GIS-GEORGIA/gis-toolkit/releases)** —
 `v*` ტეგზე CI ავტომატურად აწყობს დამოუკიდებელ ბილდებს:
 
-For a no-Python run, see the **[Releases](https://github.com/kapo-Toolkits/gis-toolkit/releases)** page —
+For a no-Python run, see the **[Releases](https://github.com/GIS-GEORGIA/gis-toolkit/releases)** page —
 each `v*` tag builds standalone artifacts:
 
 | პლატფორმა | ფაილი |
