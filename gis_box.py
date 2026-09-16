@@ -745,22 +745,11 @@ def _enable_dpi_awareness():
             pass
 
 
-def _set_app_user_model_id():
-    """Windows: თითო გაშვებას უნიკალური AppUserModelID — რომ Task Manager-მა /
-    ამოცანების პანელმა ცალკეული ინსტანციები ერთმანეთს არ დააჯგუფოს/დააკავშიროს.
+# შენიშვნა: ცხად AppUserModelID-ს არ ვაყენებთ. GIS_BOX საკუთარი „GIS_BOX.exe“-ით
 
-    „python.exe“-ით გაშვებისასაც Windows ინსტანციებს ერთ „Python“ ჯგუფად კრავს
-    (საერთო AppUserModelID). PID-ით უნიკალიზება თითოეულ ფანჯარას ცალკე
-    აპლიკაციად აქცევს — თავისი ხატულით/სახელით („GIS_BOX“). ფანჯრის შექმნამდე
-    უნდა გამოიძახოს."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        app_id = "GGTC.GIS_BOX.{}".format(os.getpid())
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-    except Exception:
-        pass
+# ეშვება, ამიტომ ფანჯარა ავტომატურად უკავშირდება ამოცანების პანელზე მიმაგრებულ
+# (pinned) ხატულას (Toolbox-ის მსგავსად). ცხადი (მით უმეტეს per-PID) ID-ის
+# დაყენება ამ კავშირს არღვევდა — ცალკე ღილაკი tkinter-ის ხატულით ჩნდებოდა.
 
 
 if __name__ == "__main__":
@@ -769,6 +758,5 @@ if __name__ == "__main__":
     if "--gdb2pg-run" in sys.argv:
         from tools.gdb2postgis_cli import run_headless
         sys.exit(run_headless())
-    _set_app_user_model_id()      # ფანჯრის შექმნამდე — ცალკე აპლიკაციად გამოჩენა
     _enable_dpi_awareness()
     GisBoxApp().mainloop()
