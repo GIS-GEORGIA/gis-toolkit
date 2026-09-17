@@ -69,6 +69,12 @@ PTR = {
     # dialogs
     "err":           {"en": "Error", "ka": "შეცდომა"},
     "err_gdb":       {"en": "Database path not found.", "ka": "ბაზის მისამართი ვერ მოიძებნა."},
+    "err_gdb_folder": {"en": "“{name}” is a folder, not a geodatabase — it "
+                             "contains {n}: {list}. Select the specific .gdb "
+                             "(e.g. …/{name}/{first}).",
+                       "ka": "„{name}“ საქაღალდეა, არა გეობაზა — შიგ არის {n}: "
+                             "{list}. აირჩიე კონკრეტული .gdb "
+                             "(მაგ. …/{name}/{first})."},
     "err_layer_field": {"en": "Select a layer and code field.",
                         "ka": "აირჩიე შრე და კოდის ველი."},
     "err_out":       {"en": "Specify the output file path.",
@@ -398,6 +404,8 @@ class ParcelSearchTool(ToolFrame):
             if not silent:
                 messagebox.showerror(self.tr("err"), self.tr("err_gdb"))
             return
+        if self._folder_not_gdb(gdb, silent):        # საქაღალდე .gdb-ების შიგნით
+            return
         # მიმდინარე მნიშვნელობებს მთავარ ნაკადში ვკითხულობთ (Tk thread-safe არაა)
         cur_layer = self._layer_code(self.layer_var.get())
         cur_field = self.field_var.get()
@@ -407,6 +415,33 @@ class ParcelSearchTool(ToolFrame):
         threading.Thread(target=self._meta_worker,
                          args=(gen, gdb, cur_layer, cur_field, silent),
                          daemon=True).start()
+
+    @staticmethod
+    def _gdb_children(path):
+        """თუ path საქაღალდეა (და თვითონ .gdb არაა), აბრუნებს შიგნით მყოფ .gdb-ების
+        სახელებს (დალაგებული); სხვა შემთხვევაში — None."""
+        p = path.rstrip("/\\")
+        if not os.path.isdir(p) or p.lower().endswith(".gdb"):
+            return None
+        kids = sorted(n for n in os.listdir(p)
+                      if n.lower().endswith(".gdb")
+                      and os.path.isdir(os.path.join(p, n)))
+        return kids or None
+
+    def _folder_not_gdb(self, gdb, silent):
+        """True + მინიშნება, თუ მითითებულია .gdb-ების შემცველი საქაღალდე (და არა .gdb)."""
+        kids = self._gdb_children(gdb)
+        if not kids:
+            return False
+        name = os.path.basename(gdb.rstrip("/\\")) or gdb
+        msg = self.tr("err_gdb_folder", name=name, n=len(kids),
+                      list=", ".join(kids), first=kids[0])
+        if silent:
+            self.app.log("— " + msg)
+            self.status.set(self.tr("ready"))
+        else:
+            messagebox.showwarning("GIS_BOX", msg)
+        return True
 
     def _meta_worker(self, gen, gdb, cur_layer, cur_field, silent):
         """ფონური: შრეების სია + არჩეული შრის ველები. ცდომილება/შედეგი queue-ში."""
@@ -527,6 +562,8 @@ class ParcelSearchTool(ToolFrame):
 
         if not os.path.exists(gdb):
             messagebox.showerror(self.tr("err"), self.tr("err_gdb"))
+            return
+        if self._folder_not_gdb(gdb, silent=False):  # .gdb-ების შემცველი საქაღალდე
             return
         if not (layer and field):
             messagebox.showerror(self.tr("err"), self.tr("err_layer_field"))
