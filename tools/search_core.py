@@ -10,10 +10,10 @@ import os
 import re
 import traceback
 
-try:                       # რბილი იმპორტი — CI/ტესტში pyogrio შეიძლება არ იყოს
-    import pyogrio
-except ImportError:        # pragma: no cover
-    pyogrio = None
+# pyogrio (GDAL) მძიმეა და ~0.6 წმ სჭირდება — მოდულის დონეზე არ ვტვირთავთ, რომ
+# ხელსაწყოს პირველი გახსნა არ შეანელოს. run_search-ში lazy-ად იტვირთება (ფონურ
+# ნაკადში). ტესტში monkeypatch-ით იცვლება, ამიტომ მოდულის გლობალად რჩება.
+pyogrio = None
 
 CHUNK_SIZE = 1000          # რამდენ კოდს ვეძებთ ერთ მოთხოვნაში
 
@@ -74,6 +74,10 @@ def run_search(gdb, layer, field, codes, out_path, log, done, tr,
     """
     formats = set(formats or ())
     try:
+        global pyogrio                 # lazy — ფონურ ნაკადში (ტესტში monkeypatch-ია)
+        if pyogrio is None:
+            import pyogrio as _pg
+            pyogrio = _pg
         # უნიკალური, ნორმალიზებული კოდები, თანმიმდევრობის შენარჩუნებით
         requested = []
         seen = set()

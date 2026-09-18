@@ -17,8 +17,11 @@ import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
-import pandas as pd
-import pyogrio
+# pandas/pyogrio მძიმეა (~2 წმ) — არ ვტვირთავთ მოდულის დონეზე, თორემ ხელსაწყოს
+# ტაბზე პირველი დაწკაპება მთელ პროგრამას აჭედავს. lazy-ად, საჭიროებისას (ძებნა/
+# ფაილის ატვირთვა) იტვირთება — უმეტესად ფონურ ნაკადში. ტესტი monkeypatch-ს
+# tools.search_core.pyogrio-ზე აკეთებს (აქ არა).
+pyogrio = None                     # lazy; დანიშნულება — ფონურ worker-ებში
 
 from tools.base import ToolFrame
 from tools.tooltip import add_tip
@@ -417,6 +420,15 @@ class ParcelSearchTool(ToolFrame):
                          daemon=True).start()
 
     @staticmethod
+    def _ensure_pyogrio():
+        """pyogrio-ს lazy ჩატვირთვა მოდულის გლობალში (ფონურ ნაკადში იძახება)."""
+        global pyogrio
+        if pyogrio is None:
+            import pyogrio as _pg
+            pyogrio = _pg
+        return pyogrio
+
+    @staticmethod
     def _gdb_children(path):
         """თუ path საქაღალდეა (და თვითონ .gdb არაა), აბრუნებს შიგნით მყოფ .gdb-ების
         სახელებს (დალაგებული); სხვა შემთხვევაში — None."""
@@ -446,6 +458,7 @@ class ParcelSearchTool(ToolFrame):
     def _meta_worker(self, gen, gdb, cur_layer, cur_field, silent):
         """ფონური: შრეების სია + არჩეული შრის ველები. ცდომილება/შედეგი queue-ში."""
         try:
+            self._ensure_pyogrio()      # lazy — ფონურ ნაკადში (UI არ იჭედება)
             layers = [row[0] for row in pyogrio.list_layers(gdb)]
             if not layers:
                 self.msg_queue.put(("meta_empty", (gen, silent)))
@@ -489,6 +502,7 @@ class ParcelSearchTool(ToolFrame):
 
     def _fields_worker(self, gen, gdb, layer, cur_field, silent):
         try:
+            self._ensure_pyogrio()      # lazy — ფონურ ნაკადში
             info = pyogrio.read_info(gdb, layer=layer)
             fields = list(info["fields"])
             chosen = pick_code_field(fields, cur_field, DEFAULT_FIELD)
@@ -507,6 +521,7 @@ class ParcelSearchTool(ToolFrame):
         if not path:
             return
         try:
+            import pandas as pd            # lazy — მხოლოდ ფაილის ატვირთვისას
             if path.lower().endswith((".xlsx", ".xls")):
                 df = pd.read_excel(path, dtype=str)
             else:
