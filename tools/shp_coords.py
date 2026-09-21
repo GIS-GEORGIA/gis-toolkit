@@ -515,6 +515,20 @@ class ShpCoordsTool(ToolFrame):
         self.shp_var.set(auto or names[0])
         self._on_shp_selected()
 
+    def load_external(self, path):
+        """გარე ხელსაწყოდან მოწოდებული წერტილოვანი shp-ის ჩატვირთვა და არჩევა
+        (მაგ. „დაცვის ზონის კვეთა“-დან). აყენებს საქაღალდეს, სკანირებს და
+        ირჩევს სწორედ ამ ფაილს."""
+        if not path or not os.path.exists(path):
+            return
+        self.folder_var.set(os.path.dirname(path))
+        self._scan()
+        for disp, p in getattr(self, "_shp_map", {}).items():
+            if os.path.normcase(p) == os.path.normcase(path):
+                self.shp_var.set(disp)
+                self._on_shp_selected()
+                break
+
     def _on_shp_selected(self):
         shp = self._shp_map.get(self.shp_var.get())
         if not shp:

@@ -105,6 +105,7 @@ TR = {
     "shpcoord_name":{"en": "Shp → coordinates",     "ka": "Shp → კოორდინატები"},
     "gdb2pg_name":  {"en": "GDB → PostGIS",         "ka": "GDB → PostGIS"},
     "geomcol_name": {"en": "Geometry → GeoPackage",  "ka": "გეომეტრიების შეგროვება"},
+    "zoneint_name": {"en": "Zone intersection",     "ka": "დაცვის ზონის კვეთა"},
     "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
@@ -433,7 +434,13 @@ class GisBoxApp(tk.Tk):
         })
         specs.append({
             "name_en": TR["shpcoord_name"]["en"], "name_ka": TR["shpcoord_name"]["ka"],
+            "tid": "shp_coords",
             "factory": self._make_shpcoord_tool,
+        })
+        specs.append({
+            "name_en": TR["zoneint_name"]["en"], "name_ka": TR["zoneint_name"]["ka"],
+            "tid": "zone_intersect",
+            "factory": self._make_zoneint_tool,
         })
         specs.append({
             "name_en": TR["gdb2pg_name"]["en"], "name_ka": TR["gdb2pg_name"]["ka"],
@@ -472,6 +479,19 @@ class GisBoxApp(tk.Tk):
     def _make_geomcol_tool(self, master):
         from tools.geom_collect import GeomCollectTool
         return GeomCollectTool(master, self)
+
+    def _make_zoneint_tool(self, master):
+        from tools.zone_intersect import ZoneIntersectTool
+        return ZoneIntersectTool(master, self)
+
+    def show_tool_by_tid(self, tid):
+        """ხელსაწყოზე გადართვა tid-ით; აბრუნებს frame-ს (ან None). სხვა ხელსაწყოებს
+        ზედმეტად არ ქმნის — ინდექსს spec['tid']-ით პოულობს."""
+        for i, spec in enumerate(self.tool_specs):
+            if spec.get("tid") == tid:
+                self.show(i)
+                return self.frames[i]
+        return None
 
     def _make_map_tool(self, master):
         from tools.map_services import MapServicesTool

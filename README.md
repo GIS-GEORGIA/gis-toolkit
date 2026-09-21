@@ -26,6 +26,7 @@ tools (Document search, Collect files) live in a separate project — [Toolbox](
 | **Shp → კოორდინატები** / Shp → coordinates | წერტილოვანი shapefile-იდან კითხულობს X/Y-ს UTM ზონით (37/38, .prj-დან ან ხელით), წინასწარი ცხრილით; გააქვს დაფორმატებულ Excel-ში — ტექსტური ქუდი, `№/X/Y`, არჩევითი „გადაკვეთის კუთხე“ (°), center+borders. **Batch** — საქაღალდის ყველა წერტილოვანი shapefile ერთბაშად. |
 | **GDB → PostGIS** / GDB → PostGIS | ატანს ESRI Geodatabase-ის (`.gdb`/`.mdb`) შრეებს PostgreSQL/PostGIS-ში `ogr2ogr`-ით — შრეების არჩევა, კავშირის შემოწმება, რეჟიმები (overwrite/append/update), რეპროექცია, **ინკრემენტული სინქრონი**, **განრიგი** და **ისტორია/აუდიტი**. სჭირდება GDAL (QGIS/OSGeo4W) და PostGIS ბაზა. → იხ. [ცალკე სექცია](#gdb--postgis). |
 | **გეომეტრიების შეგროვება** / Geometry → GeoPackage | საქაღალდის ხეში პოულობს **მონიშნული ვექტორული ფორმატის** ფაილებს (SHP, DXF, DWG, GPKG, GeoJSON, KML, GML, MapInfo, .gdb და სხვ. — **ნებისმიერი GDAL ვექტორული ფორმატი**, `+ სხვა` ველით), კითხულობს გეომეტრიებს და აერთიანებს **ერთ GeoPackage-ში სამ შრედ**: წერტილები, ხაზები, პოლიგონები (Multi-გეომეტრიად, `src_file`/`src_layer`/`src_type` ველებით). გამომავალი CRS — ავტომატური (პირველი ნაპოვნი) ან UTM 37N/38N. ფონურ ნაკადში, დათვლა/გაუქმებით. DWG-ს სჭირდება GDAL-ის CAD დრაივერი (QGIS/OSGeo4W); წაუკითხავი ფაილი გამოტოვდება და ლოგში აისახება. |
+| **დაცვის ზონის კვეთა** / Zone intersection | ნაკვეთის და დაცვის ზონის პოლიგონური shapefile-ებიდან პოულობს **წერტილებს, სადაც ნაკვეთის საზღვარი კვეთს ზონის საზღვარს** (arcpy `Intersect(output_type="POINT")`-ის ანალოგი, shapely-ით). ზონა აირჩევა ატრიბუტით (ველი + მნიშვნელობა, მაგ. I/II) ან „ყველა ზონა“; შედეგი იწერება წერტილოვან shapefile-ად (`.prj`-თი, UTM ავტო-ცნობისთვის). შესვლის გზები **💾 დასამახსოვრებელია**. პირდაპირ გადადის **„Shp → კოორდინატებში“** ან იქვე გამოაქვს Excel ცხრილი. |
 | **რუკის სერვისები** / Map services | tile / WMS სერვისების URL-ები (Google basemaps, ორთოფოტო, NAPR) — ArcMap / QGIS-ში ჩასასმელად, ერთი ღილაკით კოპირებით. სია იკითხება რეპოს ძირის `map_services.txt`-იდან (სახელის ხაზი, შემდეგ URL-ის ხაზი) — ახლის დამატება ფაილის რედაქტირებით, კოდის შეხების გარეშე. ზოგი სერვისი მოითხოვს VPN-ს / წვდომას. |
 
 ---
@@ -164,6 +165,8 @@ GIS_BOX/
 │  ├─ gdb2postgis_core.py    # ↳ ძრავა (ogr2ogr, GUI-free; MIT, vendored)
 │  ├─ geom_collect.py        # გეომეტრიების შეგროვება → GeoPackage (tkinter UI)
 │  ├─ geom_collect_core.py   # ↳ წაკითხვა/კლასიფიკაცია/ჩაწერა (GUI-free)
+│  ├─ zone_intersect.py      # დაცვის ზონის კვეთა (tkinter UI)
+│  ├─ zone_intersect_core.py # ↳ საზღვრების კვეთის წერტილები (GUI-free)
 │  ├─ map_services.py       # რუკის სერვისები (tile/WMS URL-ები, კოპირება)
 │  ├─ coord_tool.py          # კოორდინატების ამომღების wrapper
 │  ├─ coordextract/          # OCR + გეო-რეფერენსის პაკეტი
