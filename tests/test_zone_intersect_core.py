@@ -46,6 +46,21 @@ def test_collect_points_dedup_and_order():
     assert (10, 5) in keys                          # საერთო კვეთა ერთხელ
 
 
+def test_collect_points_ordered_along_corridor_top_to_bottom():
+    # ვერტიკალური დერეფანი, რომელიც სცდება ნაკვეთს ზემოთ/ქვემოთ — კვეთს
+    # ზედა და ქვედა კიდეებს. ნუმერაცია ზემოდან ქვევით უნდა წავიდეს.
+    parcel = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+    corridor = Polygon([(40, -10), (60, -10), (60, 110), (40, 110)])
+    pts = collect_points([parcel], [corridor])
+    ys = [round(y) for _, y in pts]
+    assert ys == [100, 100, 0, 0]                 # ზედა წყვილი, მერე ქვედა
+    # დიაგონალურ დერეფანზეც — პირველი წერტილი ზედა ბოლოსთანაა
+    dband = Polygon([(-12.9, 127.1), (127.1, -12.9),
+                     (112.9, -27.1), (-27.1, 112.9)])
+    pts2 = collect_points([parcel], [dband])
+    assert pts2[0][1] > pts2[-1][1]               # პირველი — ზემოთ, ბოლო — ქვემოთ
+
+
 def test_collect_points_no_intersection_empty():
     parcel = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     zone = Polygon([(5, 5), (6, 5), (6, 6), (5, 6)])

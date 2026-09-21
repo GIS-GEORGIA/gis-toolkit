@@ -54,17 +54,51 @@ def crossing_points(parcel, zone):
     return out
 
 
+def _corridor_axis(zones):
+    """დაცვის ზონის (დერეფნის) გრძელი ღერძის ერთეულოვანი მიმართულება (dx, dy).
+
+    zone-ის გაერთიანების მინიმალური მობრუნებული მართკუთხედის გრძელი გვერდით.
+    მიმართულებას ვასწორებთ ისე, რომ „ზემოდან ქვემოთ“ (ან ~ჰორიზონტ. დერეფანზე
+    მარცხნიდან მარჯვნივ) წაიკითხოს — რომ ნუმერაცია სურათის ლოგიკას დაემთხვეს.
+    """
+    import math
+    from shapely.ops import unary_union
+
+    try:
+        mrr = unary_union(zones).minimum_rotated_rectangle
+        cs = list(mrr.exterior.coords)[:4]
+        e1 = math.hypot(cs[1][0] - cs[0][0], cs[1][1] - cs[0][1])
+        e2 = math.hypot(cs[2][0] - cs[1][0], cs[2][1] - cs[1][1])
+        if e1 >= e2:
+            dx, dy = cs[1][0] - cs[0][0], cs[1][1] - cs[0][1]
+        else:
+            dx, dy = cs[2][0] - cs[1][0], cs[2][1] - cs[1][1]
+    except Exception:                       # noqa: BLE001
+        return None
+    n = math.hypot(dx, dy)
+    if n == 0:
+        return None
+    dx, dy = dx / n, dy / n
+    # ორიენტაცია: ვერტიკ./დახრილი დერეფანი → ზემოდან ქვევით (ღერძი ქვევით,
+    # dy<0); ~ჰორიზონტ. → მარცხნიდან მარჯვნივ (dx>0)
+    if abs(dy) >= abs(dx):
+        if dy > 0:
+            dx, dy = -dx, -dy
+    else:
+        if dx < 0:
+            dx, dy = -dx, -dy
+    return dx, dy
+
+
 def collect_points(parcels, zones, ndigits=4):
-    """ყველა ნაკვეთი × ყველა ზონა — უნიკალური, საზღვრის გასწვრივ დალაგებული წერტილები.
+    """ყველა ნაკვეთი × ყველა ზონა — უნიკალური, დერეფნის გასწვრივ დალაგებული წერტილები.
 
     parcels/zones — shapely პოლიგონების იტერაცია. აბრუნებს [(x, y), …]-ს, სადაც
     ნაკვეთის საზღვარი კვეთს ზონის საზღვარს. დუბლები (ndigits-ზე დამრგვალებით)
-    ერთდება; დალაგება — ნაკვეთების გაერთიანებული საზღვრის გასწვრივ (project),
-    რომ ნუმერაცია ბუნებრივი იყოს.
+    ერთდება; **დალაგება — დაცვის ზონის (დერეფნის) გრძელი ღერძის გასწვრივ**, ზემოდან
+    ქვევით — რომ ნუმერაცია (1, 2, 3, …) თანმიმდევრული და სტაბილური იყოს (არ იწყებოდეს
+    ნაკვეთის შემთხვევითი წვეროდან). ღერძის ვერ დადგენისას — Y↓ შემდეგ X↑.
     """
-    from shapely.geometry import Point
-    from shapely.ops import unary_union
-
     parcels = [p for p in parcels if p is not None and not p.is_empty]
     zones = [z for z in zones if z is not None and not z.is_empty]
     if not parcels or not zones:
@@ -75,7 +109,7 @@ def collect_points(parcels, zones, ndigits=4):
         for z in zones:
             raw.extend(crossing_points(p, z))
 
-    # დუბლების მოცილება (დამრგვალებით), თანმიმდევრობის შენარჩუნებით
+    # დუბლების მოცილება (დამრგვალებით)
     seen = set()
     uniq = []
     for x, y in raw:
@@ -83,13 +117,15 @@ def collect_points(parcels, zones, ndigits=4):
         if key not in seen:
             seen.add(key)
             uniq.append((x, y))
-    if not uniq:
-        return []
+    if len(uniq) < 2:
+        return uniq
 
-    # დალაგება ნაკვეთების საზღვრის გასწვრივ
-    try:
-        merged = unary_union([p.boundary for p in parcels])
-        uniq.sort(key=lambda xy: merged.project(Point(xy)))
-    except Exception:                       # noqa: BLE001 — fallback: კოორდინატებით
-        uniq.sort()
+    axis = _corridor_axis(zones)
+    if axis is not None:
+        dx, dy = axis
+        # ღერძზე პროექცია; ტოლ პროექციაზე — მეორე ღერძით (მდგრადი წყვილებისთვის)
+        uniq.sort(key=lambda xy: (xy[0] * dx + xy[1] * dy,
+                                  xy[0] * -dy + xy[1] * dx))
+    else:                                   # fallback — ზემოდან ქვევით, მერე მარცხნიდან
+        uniq.sort(key=lambda xy: (-xy[1], xy[0]))
     return uniq
