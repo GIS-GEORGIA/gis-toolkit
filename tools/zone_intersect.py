@@ -23,7 +23,28 @@ from tools.tooltip import add_tip
 from tools.zone_intersect_core import collect_points
 
 ALL_SENTINEL = "— all —"          # „ყველა ზონა“ მარკერი value-combo-ში
-_AUTO_FIELDS = ("zon", "zone", "ზონ", "type", "tip", "kind", "class", "name")
+# ზონის ველის ავტო-შერჩევა: ჯერ id/FID-ის მსგავსი (ზუსტი დამთხვევა), მერე
+# შემცველობა; თუ ვერცერთი — პირველი ხელმისაწვდომი ველი. მომხმარებელი შეცვლის.
+_AUTO_FIELDS_EXACT = ("fid", "objectid", "oid", "gid", "id", "code",
+                      "zona", "zone", "ზონა")
+_AUTO_FIELDS_SUBSTR = ("fid", "objectid", "id", "zon", "type", "code", "name")
+
+# გამომავალი შრის ნაგულისხმევი საბაზისო სახელი (მომხმარებელი შეცვლის).
+# საბოლოო: <base><UTM ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
+DEFAULT_OUT_NAME = "Gas_Pipe_ProtZone_Crossing"
+
+
+def _auto_zone_field(fields):
+    """ზონის ველის ავტო-შერჩევა: id/FID → substring → პირველი ველი."""
+    low = {f.lower(): f for f in fields}
+    for pref in _AUTO_FIELDS_EXACT:
+        if pref in low:
+            return low[pref]
+    for sub in _AUTO_FIELDS_SUBSTR:
+        for f in fields:
+            if sub in f.lower():
+                return f
+    return fields[0] if fields else ""
 
 
 ZTR = {
@@ -37,9 +58,18 @@ ZTR = {
                        "მიუთითე ზონა და შექმენი წერტილოვანი shapefile იქ, სადაც "
                        "ნაკვეთის საზღვარი კვეთს ზონის საზღვარს. შედეგი პირდაპირ "
                        "გადადის „Shp → კოორდინატებში“."},
+    "section":  {"en": "Protection-zone intersection",
+                 "ka": "დაცვის ზონების გადაკვეთა"},
     "parcel":   {"en": "Parcel shp:", "ka": "ნაკვეთის shp:"},
     "zone":     {"en": "Zone shp:", "ka": "ზონის shp:"},
     "out":      {"en": "Output folder:", "ka": "გამომავალი საქაღალდე:"},
+    "outname":  {"en": "Output name:", "ka": "გამომავალი სახელი:"},
+    "tip_outname": {"en": "Base name for the output layer. The UTM zone and an "
+                          "incrementing _1/_2 suffix are added automatically "
+                          "(e.g. Gas_Pipe_ProtZone_Crossing38_1).",
+                    "ka": "გამომავალი შრის საბაზისო სახელი. UTM ზონა და ზრდადი "
+                          "_1/_2 სუფიქსი ავტომატურად ემატება "
+                          "(მაგ. Gas_Pipe_ProtZone_Crossing38_1)."},
     "browse":   {"en": "…", "ka": "…"},
     "remember": {"en": "💾 Remember", "ka": "💾 დამახსოვრება"},
     "zfield":   {"en": "Zone field:", "ka": "ზონის ველი:"},
@@ -124,29 +154,39 @@ class ZoneIntersectTool(ToolFrame):
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=760, justify="left").pack(anchor="w", pady=(0, 12))
 
-        grid = ttk.Frame(self)
+        grid = ttk.LabelFrame(self, text=self.tr("section"))
         grid.pack(fill="x")
         grid.columnconfigure(1, weight=1)
 
         def path_row(r, label, key, tip, on_set=None):
             ttk.Label(grid, text=self.tr(label)).grid(row=r, column=0, sticky="w",
-                                                      pady=2)
+                                                      padx=6, pady=2)
             var = tk.StringVar(value=st.get(key) or saved.get(key) or "")
             ttk.Entry(grid, textvariable=var).grid(row=r, column=1, sticky="ew",
                                                    padx=(6, 6), pady=2)
             add_tip(ttk.Button(grid, text=self.tr("browse"), width=3,
                                command=lambda: self._pick(var, key, on_set)),
-                    tip).grid(row=r, column=2)
+                    tip).grid(row=r, column=2, padx=(0, 6))
             return var
 
+        # 1-3: ნაკვეთი / ზონა / გამომავალი საქაღალდე
         self.parcel_var = path_row(0, "parcel", "parcel", self.tr("tip_parcel"))
         self.zone_var = path_row(1, "zone", "zone", self.tr("tip_zone"),
                                  on_set=lambda: self._load_zone_meta())
         self.out_var = path_row(2, "out", "out", self.tr("tip_out"))
 
+        # 4: გამომავალი სახელი (base) — ბრაუზის გარეშე
+        ttk.Label(grid, text=self.tr("outname")).grid(row=3, column=0, sticky="w",
+                                                      padx=6, pady=2)
+        self.name_var = tk.StringVar(
+            value=st.get("outname") or saved.get("outname") or DEFAULT_OUT_NAME)
+        add_tip(ttk.Entry(grid, textvariable=self.name_var),
+                self.tr("tip_outname")).grid(row=3, column=1, sticky="ew",
+                                             padx=(6, 6), pady=2)
+
         add_tip(ttk.Button(grid, text=self.tr("remember"), command=self._remember),
-                self.tr("tip_remember")).grid(row=3, column=1, sticky="w",
-                                              padx=(6, 0), pady=(4, 0))
+                self.tr("tip_remember")).grid(row=4, column=1, sticky="w",
+                                              padx=(6, 0), pady=(4, 6))
 
         # ზონის არჩევა (ველი + მნიშვნელობა)
         zsel = ttk.Frame(self)
@@ -198,6 +238,7 @@ class ZoneIntersectTool(ToolFrame):
         st["parcel"] = self.parcel_var.get()
         st["zone"] = self.zone_var.get()
         st["out"] = self.out_var.get()
+        st["outname"] = self.name_var.get()
         st["zfield"] = self.zfield_var.get()
         st["zvalue"] = self.zvalue_var.get()
 
@@ -219,6 +260,7 @@ class ZoneIntersectTool(ToolFrame):
             "parcel": self.parcel_var.get().strip(),
             "zone": self.zone_var.get().strip(),
             "out": self.out_var.get().strip(),
+            "outname": self.name_var.get().strip(),
         })
         self.save_state()
         messagebox.showinfo("GIS_BOX", self.tr("cfg_saved"))
@@ -255,10 +297,8 @@ class ZoneIntersectTool(ToolFrame):
         self.zfield_combo["values"] = fields
         cur = self.zfield_var.get()
         if cur not in fields:
-            # ავტო-შერჩევა — სავარაუდო ზონის ველი, თუ არა — ცარიელი
-            auto = next((f for f in fields
-                         if any(p in f.lower() for p in _AUTO_FIELDS)), "")
-            self.zfield_var.set(auto)
+            # ავტო-შერჩევა — id/FID → substring → პირველი ველი
+            self.zfield_var.set(_auto_zone_field(fields))
         self._refresh_values()
         if not self.busy:
             self.status.set("")
@@ -321,14 +361,8 @@ class ZoneIntersectTool(ToolFrame):
             zones = [g for g in zgdf.geometry if g is not None]
             pts = collect_points(parcels, zones)
 
-            zlabel = self._sanitize(value) if value else "all"
-            base = os.path.splitext(os.path.basename(parcel))[0]
-            out_path = os.path.join(out, "{}_{}_intersection.shp".format(
-                self._sanitize(base), zlabel))
-
             self.msg_queue.put(("result", {
-                "points": pts, "crs": target_crs, "out_path": out_path,
-                "zvalue": value,
+                "points": pts, "crs": target_crs, "out": out,
             }))
         except ImportError as e:
             self.msg_queue.put(("dep_err", str(e)))
@@ -381,6 +415,28 @@ class ZoneIntersectTool(ToolFrame):
         self.progress.stop()
         self.create_btn.configure(state="normal", text=self.tr("btn_create"))
 
+    @staticmethod
+    def _zone_num_from_crs(crs):
+        """CRS → UTM ზონის ნომერი (37/38…) ან '' — გამომავალ სახელში ჩასასმელად."""
+        try:
+            epsg = crs.to_epsg() if crs is not None else None
+        except Exception:                          # noqa: BLE001
+            epsg = None
+        if epsg and 32601 <= epsg <= 32660:        # WGS84 / UTM N
+            return str(epsg - 32600)
+        if epsg and 32701 <= epsg <= 32760:        # WGS84 / UTM S
+            return str(epsg - 32700)
+        return ""
+
+    def _next_free_path(self, out, base):
+        """out/base_<N>.shp — პირველი თავისუფალი N (1, 2, 3…)."""
+        n = 1
+        while True:
+            cand = os.path.join(out, "{}_{}.shp".format(base, n))
+            if not os.path.exists(cand):
+                return cand
+            n += 1
+
     def _on_result(self, res):
         self._reset()
         pts = res["points"]
@@ -388,13 +444,20 @@ class ZoneIntersectTool(ToolFrame):
             self.status.set(self.tr("warn_none"))
             messagebox.showinfo("GIS_BOX", self.tr("warn_none"))
             return
+        # სახელი: <base><ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
+        base = self._sanitize(self.name_var.get().strip() or DEFAULT_OUT_NAME)
+        znum = self._zone_num_from_crs(res["crs"])
+        if znum and not base.endswith(znum):
+            base = base + znum
+        out_path = self._next_free_path(res["out"], base)
         try:
-            self._write_shp(pts, res["crs"], res["out_path"])
+            self._write_shp(pts, res["crs"], out_path)
         except Exception as e:                     # noqa: BLE001
             self.status.set(self.tr("err"))
             messagebox.showerror(self.tr("err"), str(e))
             return
-        self._last_output = res["out_path"]
+        self._last_output = out_path
+        res = dict(res, out_path=out_path)
         self.coords_btn.configure(state="normal")
         self.excel_btn.configure(state="normal")
         msg = self.tr("done", n=len(pts), path=res["out_path"])
