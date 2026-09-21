@@ -37,6 +37,8 @@ LANGS = {"en": "English", "ka": "ქართული"}
 
 TR = {
     "tools":        {"en": "Tools",                "ka": "ინსტრუმენტები"},
+    "reorder_hint": {"en": "Click to open · drag to reorder",
+                     "ka": "დაწკაპე გასახსნელად · გადაათრიე დასალაგებლად"},
     "log":          {"en": "Log",                  "ka": "ლოგი"},
     "log_clear":    {"en": "Clear",                "ka": "გასუფთავება"},
     "log_save":     {"en": "Save .txt",            "ka": "შენახვა .txt"},
@@ -385,6 +387,7 @@ class GisBoxApp(tk.Tk):
         self.tool_config = {}
         self.current_tool = 0        # ბოლო არჩეული ხელსაწყო (settings-იდან)
         self.win_geometry = ""       # ბოლო ფანჯრის ზომა/პოზიცია
+        self.tool_order = []         # მომხმარებლის დალაგებული რიგი (key-ების სია)
         self.load_settings()
 
         # უფრო დიდი ნაგულისხმევი ზომა — ჩაშენებული ხელსაწყოებისთვის (რუკა, ცხრილები);
@@ -454,6 +457,22 @@ class GisBoxApp(tk.Tk):
             "name_en": TR["map_name"]["en"], "name_ka": TR["map_name"]["ka"],
             "factory": self._make_map_tool,
         })
+        # თითო ხელსაწყოს სტაბილური key (tid ან ინგლისური სახელი) — რიგის
+        # დასამახსოვრებლად. მომხმარებლის შენახული რიგი (tool_order) გამოიყენება;
+        # ახალი/უცნობი ხელსაწყოები ნაგულისხმევ რიგში ბოლოში ჩაემატება.
+        for spec in specs:
+            spec.setdefault("key", spec.get("tid") or spec["name_en"])
+        if self.tool_order:
+            by_key = {s["key"]: s for s in specs}
+            seen = set()
+            ordered = []
+            for k in self.tool_order:
+                s = by_key.get(k)
+                if s is not None and k not in seen:
+                    ordered.append(s)
+                    seen.add(k)
+            ordered += [s for s in specs if s["key"] not in seen]
+            specs = ordered
         return specs
 
     def _make_parcel_tool(self, master):
@@ -540,6 +559,7 @@ class GisBoxApp(tk.Tk):
             self.tool_config = s.get("tool_config", self.tool_config)
             self.current_tool = s.get("current_tool", self.current_tool)
             self.win_geometry = s.get("geometry", self.win_geometry)
+            self.tool_order = s.get("tool_order", self.tool_order)
         except (OSError, ValueError):
             pass
 
@@ -551,12 +571,15 @@ class GisBoxApp(tk.Tk):
                     geom = self.geometry()
             except tk.TclError:
                 pass
+            order = [s.get("key") for s in getattr(self, "tool_specs", [])
+                     if s.get("key")] or self.tool_order
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump({"lang": self.lang, "theme": self.theme,
                            "source_dir": self.source_dir,
                            "tool_config": self.tool_config,
                            "current_tool": self.current_tool,
-                           "geometry": geom}, f,
+                           "geometry": geom,
+                           "tool_order": order}, f,
                           ensure_ascii=False, indent=2)
         except OSError:
             pass
@@ -649,7 +672,9 @@ class GisBoxApp(tk.Tk):
         sidebar = ttk.Frame(body, padding=8)
         sidebar.pack(side="left", fill="y")
         ttk.Label(sidebar, text=self.t("tools"),
-                  font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 8))
+                  font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 2))
+        ttk.Label(sidebar, text=self.t("reorder_hint"), foreground=p["muted"],
+                  font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 6))
 
         self.container = ttk.Frame(body)
         self.container.pack(side="left", fill="both", expand=True)
@@ -670,12 +695,24 @@ class GisBoxApp(tk.Tk):
         self.logbox.pack(fill="x")
         self._restore_log()
 
-        # ინსტრუმენტების ღილაკები (frame-ები lazy-ად იქმნება show()-ში)
+        # ინსტრუმენტების სია — Listbox (დაწკაპება ხსნის, გადათრევა ალაგებს).
+        # frame-ები lazy-ად იქმნება show()-ში.
         self.frames = [None] * len(self.tool_specs)
-        for idx, spec in enumerate(self.tool_specs):
-            ttk.Button(sidebar, text=spec["name_" + self.lang], width=22,
-                       command=lambda i=idx: self.show(i)).pack(
-                anchor="w", pady=2)
+        self.tool_list = tk.Listbox(
+            sidebar, width=24, height=len(self.tool_specs),
+            activestyle="none", exportselection=False, highlightthickness=0,
+            relief="flat", borderwidth=0,
+            bg=p["field_bg"], fg=p["fg"],
+            selectbackground=p["select"], selectforeground=p["fg"],
+            font=("Segoe UI", 10))
+        for spec in self.tool_specs:
+            self.tool_list.insert("end", "  " + spec["name_" + self.lang])
+        self.tool_list.pack(anchor="w", fill="y", pady=2)
+        self.tool_list.bind("<Button-1>", self._tool_press)
+        self.tool_list.bind("<B1-Motion>", self._tool_drag)
+        self.tool_list.bind("<ButtonRelease-1>", self._tool_release)
+        self._drag_from = None
+        self._drag_moved = False
 
         if self.current_tool >= len(self.tool_specs):
             self.current_tool = 0
@@ -689,6 +726,51 @@ class GisBoxApp(tk.Tk):
         if self.frames[idx] is None:
             self.frames[idx] = self._instantiate_tool(idx)
         self.frames[idx].pack(side="top", fill="both", expand=True)
+        # sidebar-ის მონიშვნა მიმდინარე ხელსაწყოზე
+        lb = getattr(self, "tool_list", None)
+        if lb is not None and lb.winfo_exists():
+            lb.selection_clear(0, "end")
+            lb.selection_set(idx)
+            lb.activate(idx)
+
+    # --- ინსტრუმენტების რიგის drag-and-drop ---
+    def _tool_press(self, event):
+        self._drag_from = self.tool_list.nearest(event.y)
+        self._drag_moved = False
+        return "break"
+
+    def _tool_drag(self, event):
+        if self._drag_from is None:
+            return "break"
+        to = self.tool_list.nearest(event.y)
+        if to >= 0 and to != self._drag_from:
+            self._move_tool(self._drag_from, to)
+            self._drag_from = to
+            self._drag_moved = True
+        return "break"
+
+    def _tool_release(self, event):
+        idx = self.tool_list.nearest(event.y)
+        if idx < 0:
+            idx = self.current_tool
+        if self._drag_moved:
+            self.save_settings()            # ახალი რიგი დამახსოვრდეს
+        self.show(idx)                      # დაწკაპება/დაგდება → ხელსაწყოს გახსნა
+        self._drag_from = None
+        self._drag_moved = False
+        return "break"
+
+    def _move_tool(self, a, b):
+        """ხელსაწყოს გადატანა რიგში a→b — specs/frames/listbox სინქრონულად.
+        current_tool-ს არ ვასწორებთ — _tool_release-ის show() დაასწორებს."""
+        n = len(self.tool_specs)
+        if a == b or not (0 <= a < n) or not (0 <= b < n):
+            return
+        self.tool_specs.insert(b, self.tool_specs.pop(a))
+        self.frames.insert(b, self.frames.pop(a))
+        text = self.tool_list.get(a)
+        self.tool_list.delete(a)
+        self.tool_list.insert(b, text)
 
     # --- გადამრთველები ---
     def on_lang(self, _evt=None):
