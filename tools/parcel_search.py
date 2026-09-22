@@ -311,7 +311,8 @@ class ParcelSearchTool(ToolFrame):
         # --- ღილაკი + გაუქმება + პროგრესი ---
         btn_row = ttk.Frame(self)
         btn_row.pack(fill="x", padx=8, pady=6)
-        self.search_btn = ttk.Button(btn_row, text=tr("btn_search"), command=self._start_search)
+        self.search_btn = ttk.Button(btn_row, text=tr("btn_search"),
+                                     style="Accent.TButton", command=self._start_search)
         self.search_btn.pack(side="left", fill="x", expand=True)
         add_tip(self.search_btn, tr("tip_search"))
         self.cancel_btn = ttk.Button(btn_row, text=tr("btn_cancel"),

@@ -230,7 +230,7 @@ class GeomCollectTool(ToolFrame):
         add_tip(ttk.Button(opt, text=self.tr("btn_count"), command=self._count),
                 self.tr("tip_count")).pack(side="left", padx=(16, 4))
         self.run_btn = ttk.Button(opt, text=self.tr("btn_run"),
-                                  command=self._start)
+                                  style="Accent.TButton", command=self._start)
         self.run_btn.pack(side="left", padx=(0, 4))
         add_tip(self.run_btn, self.tr("tip_run"))
         self.cancel_btn = ttk.Button(opt, text=self.tr("btn_cancel"),

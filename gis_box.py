@@ -209,7 +209,8 @@ class TemplateCopier(ToolFrame):
         # მოქმედებები: კოპირება + საქაღალდის დამახსოვრება (+ „ყველასთვის“)
         actions = ttk.Frame(self)
         actions.grid(row=8, column=0, columnspan=3, sticky="ew")
-        add_tip(ttk.Button(actions, text=self.t("tc_copy"), command=self.do_copy),
+        add_tip(ttk.Button(actions, text=self.t("tc_copy"),
+                           style="Accent.TButton", command=self.do_copy),
                 self.t("tc_tip_copy")).pack(side="left")
         add_tip(ttk.Button(actions, text=self.t("tc_remember"), command=self._remember),
                 self.t("tc_tip_remember")).pack(side="left", padx=(12, 4))
@@ -780,8 +781,11 @@ class GisBoxApp(tk.Tk):
         # ინსტრუმენტების სია — Listbox (დაწკაპება ხსნის, გადათრევა ალაგებს).
         # frame-ები lazy-ად იქმნება show()-ში.
         self.frames = [None] * len(self.tool_specs)
+        # სიგანე — ყველაზე გრძელ სახელზე მორგებული (სახელები არ იჭრება)
+        lb_width = max((len(s["name_" + self.lang]) for s in self.tool_specs),
+                       default=20) + 3
         self.tool_list = tk.Listbox(
-            sidebar, width=24, height=len(self.tool_specs),
+            sidebar, width=lb_width, height=len(self.tool_specs),
             activestyle="none", exportselection=False, highlightthickness=0,
             relief="flat", borderwidth=0,
             bg=p["sidebar"], fg=p["fg"],

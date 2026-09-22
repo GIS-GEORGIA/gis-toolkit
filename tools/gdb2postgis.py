@@ -423,7 +423,8 @@ class Gdb2PostgisTool(ToolFrame):
         # --- Actions ---
         act = ttk.Frame(body)
         act.grid(row=11, column=0, columnspan=4, sticky="ew")
-        self.import_btn = ttk.Button(act, text=self.tr("import"), command=self._start_import)
+        self.import_btn = ttk.Button(act, text=self.tr("import"),
+                                     style="Accent.TButton", command=self._start_import)
         self.import_btn.pack(side="left")
         self.cancel_btn = ttk.Button(act, text=self.tr("cancel"), command=self._cancel, state="disabled")
         self.cancel_btn.pack(side="left", padx=(6, 0))

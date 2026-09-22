@@ -147,7 +147,8 @@ class RenameTransliterateTool(ToolFrame):
                 self.tr("tip_recursive")).pack(side="left")
         add_tip(ttk.Button(opt, text=self.tr("preview"), command=self._preview),
                 self.tr("tip_preview")).pack(side="left", padx=(16, 4))
-        add_tip(ttk.Button(opt, text=self.tr("rename"), command=self._rename),
+        add_tip(ttk.Button(opt, text=self.tr("rename"), style="Accent.TButton",
+                           command=self._rename),
                 self.tr("tip_rename")).pack(side="left")
         add_tip(ttk.Button(opt, text=self.tr("undo"), command=self._undo_rename),
                 self.tr("tip_undo")).pack(side="left", padx=(4, 0))

@@ -211,7 +211,7 @@ class ZoneIntersectTool(ToolFrame):
         brow = ttk.Frame(self)
         brow.pack(fill="x", pady=(10, 4))
         self.create_btn = ttk.Button(brow, text=self.tr("btn_create"),
-                                     command=self._create)
+                                     style="Accent.TButton", command=self._create)
         self.create_btn.pack(side="left")
         add_tip(self.create_btn, self.tr("tip_create"))
         self.coords_btn = ttk.Button(brow, text=self.tr("btn_coords"),

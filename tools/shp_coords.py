@@ -356,7 +356,8 @@ class ShpCoordsTool(ToolFrame):
 
         actions = ttk.Frame(self)
         actions.grid(row=10, column=0, columnspan=3, sticky="w")
-        add_tip(ttk.Button(actions, text=self.tr("export"), command=self._export),
+        add_tip(ttk.Button(actions, text=self.tr("export"),
+                           style="Accent.TButton", command=self._export),
                 self.tr("tip_export")).pack(side="left")
         add_tip(ttk.Button(actions, text=self.tr("clip"), command=self._copy_clipboard),
                 self.tr("tip_clip")).pack(side="left", padx=(4, 0))
