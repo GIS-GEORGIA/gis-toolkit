@@ -37,6 +37,7 @@ LANGS = {"en": "English", "ka": "ქართული"}
 
 TR = {
     "tools":        {"en": "Tools",                "ka": "ინსტრუმენტები"},
+    "app_tagline":  {"en": "GIS toolkit",          "ka": "GIS ხელსაწყოების კრებული"},
     "reorder_hint": {"en": "Click to open · drag to reorder",
                      "ka": "დაწკაპე გასახსნელად · გადაათრიე დასალაგებლად"},
     "log":          {"en": "Log",                  "ka": "ლოგი"},
@@ -118,14 +119,20 @@ TR = {
 # ---- თემები / theme palettes ----------------------------------------------
 THEMES = {
     "light": {
-        "bg": "#f4f4f5", "panel": "#e9e9ec", "fg": "#1a1a1a",
-        "muted": "#666666", "field_bg": "#ffffff", "field_fg": "#1a1a1a",
-        "log_bg": "#ffffff", "log_fg": "#1a1a1a", "select": "#cfe0ff",
+        "bg": "#eef1f5", "panel": "#ffffff", "sidebar": "#ffffff",
+        "header": "#ffffff", "fg": "#1f2430", "muted": "#6b7280",
+        "field_bg": "#ffffff", "field_fg": "#1f2430",
+        "log_bg": "#f7f9fc", "log_fg": "#334155", "select": "#e4edff",
+        "accent": "#2f6feb", "accent_fg": "#ffffff", "accent_hover": "#2560d0",
+        "border": "#dce0e7",
     },
     "dark": {
-        "bg": "#1e1e20", "panel": "#26262a", "fg": "#e6e6e6",
-        "muted": "#9a9a9a", "field_bg": "#2d2d31", "field_fg": "#e6e6e6",
-        "log_bg": "#141416", "log_fg": "#d4d4d4", "select": "#33456b",
+        "bg": "#15171c", "panel": "#1e2127", "sidebar": "#1a1d22",
+        "header": "#1a1d22", "fg": "#e6e8ec", "muted": "#9aa1ac",
+        "field_bg": "#262a31", "field_fg": "#e6e8ec",
+        "log_bg": "#141619", "log_fg": "#c7ccd4", "select": "#2b3b57",
+        "accent": "#4d8dff", "accent_fg": "#ffffff", "accent_hover": "#3d7bf0",
+        "border": "#2c313a",
     },
 }
 
@@ -609,25 +616,92 @@ class GisBoxApp(tk.Tk):
         p = self.palette
         self.configure(bg=p["bg"])
         s = self.style
+        base = ("Segoe UI", 10)
+        bold = ("Segoe UI", 10, "bold")
+
         s.configure(".", background=p["bg"], foreground=p["fg"],
-                    fieldbackground=p["field_bg"])
+                    fieldbackground=p["field_bg"], font=base,
+                    bordercolor=p["border"])
+
+        # --- frames / panels ---
         s.configure("TFrame", background=p["bg"])
-        s.configure("TLabel", background=p["bg"], foreground=p["fg"])
-        s.configure("TLabelframe", background=p["bg"], foreground=p["fg"])
-        s.configure("TLabelframe.Label", background=p["bg"], foreground=p["fg"])
-        s.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
-        s.map("TCheckbutton",
-              background=[("active", p["bg"])],
-              foreground=[("disabled", p["muted"])])
-        s.configure("TButton", background=p["panel"], foreground=p["fg"])
+        s.configure("Card.TFrame", background=p["panel"])
+        s.configure("Sidebar.TFrame", background=p["sidebar"])
+        s.configure("Header.TFrame", background=p["header"])
+        s.configure("Sep.TFrame", background=p["border"])
+
+        # --- labels ---
+        s.configure("TLabel", background=p["bg"], foreground=p["fg"], font=base)
+        s.configure("Muted.TLabel", background=p["bg"], foreground=p["muted"])
+        s.configure("Header.TLabel", background=p["header"], foreground=p["fg"])
+        s.configure("Title.TLabel", background=p["header"], foreground=p["accent"],
+                    font=("Segoe UI", 15, "bold"))
+        s.configure("Subtitle.TLabel", background=p["header"],
+                    foreground=p["muted"], font=("Segoe UI", 9))
+        s.configure("H.TLabel", background=p["bg"], foreground=p["fg"],
+                    font=("Segoe UI", 13, "bold"))
+
+        # --- label-frames (cards) ---
+        s.configure("TLabelframe", background=p["bg"], bordercolor=p["border"],
+                    relief="solid", borderwidth=1)
+        s.configure("TLabelframe.Label", background=p["bg"],
+                    foreground=p["muted"], font=bold)
+
+        # --- checks / radios ---
+        for w in ("TCheckbutton", "TRadiobutton"):
+            s.configure(w, background=p["bg"], foreground=p["fg"])
+            s.map(w, background=[("active", p["bg"])],
+                  foreground=[("disabled", p["muted"])])
+
+        # --- buttons ---
+        s.configure("TButton", background=p["panel"], foreground=p["fg"],
+                    borderwidth=1, relief="flat", padding=(12, 7))
         s.map("TButton",
-              background=[("active", p["select"]), ("pressed", p["select"])])
+              background=[("pressed", p["select"]), ("active", p["select"])],
+              bordercolor=[("active", p["accent"]), ("focus", p["accent"])])
+        s.configure("Accent.TButton", background=p["accent"],
+                    foreground=p["accent_fg"], borderwidth=0,
+                    padding=(14, 8), font=bold)
+        s.map("Accent.TButton",
+              background=[("pressed", p["accent_hover"]),
+                          ("active", p["accent_hover"])],
+              foreground=[("disabled", p["muted"])])
+
+        # --- inputs ---
         s.configure("TEntry", fieldbackground=p["field_bg"],
-                    foreground=p["field_fg"], insertcolor=p["fg"])
+                    foreground=p["field_fg"], insertcolor=p["fg"],
+                    borderwidth=1, padding=5, relief="flat")
+        s.map("TEntry", bordercolor=[("focus", p["accent"])])
         s.configure("TCombobox", fieldbackground=p["field_bg"],
-                    foreground=p["field_fg"])
+                    foreground=p["field_fg"], borderwidth=1, padding=4,
+                    arrowsize=14)
         s.map("TCombobox", fieldbackground=[("readonly", p["field_bg"])],
-              foreground=[("readonly", p["field_fg"])])
+              foreground=[("readonly", p["field_fg"])],
+              bordercolor=[("focus", p["accent"])])
+
+        # --- progress / tree / scrollbars / notebook ---
+        s.configure("Horizontal.TProgressbar", background=p["accent"],
+                    troughcolor=p["panel"], bordercolor=p["border"],
+                    lightcolor=p["accent"], darkcolor=p["accent"])
+        s.configure("Treeview", background=p["field_bg"],
+                    fieldbackground=p["field_bg"], foreground=p["fg"],
+                    bordercolor=p["border"], borderwidth=1, rowheight=24)
+        s.configure("Treeview.Heading", background=p["panel"],
+                    foreground=p["muted"], font=bold, relief="flat")
+        s.map("Treeview.Heading", background=[("active", p["select"])])
+        s.map("Treeview", background=[("selected", p["accent"])],
+              foreground=[("selected", p["accent_fg"])])
+        for sb in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
+            s.configure(sb, background=p["panel"], troughcolor=p["bg"],
+                        bordercolor=p["bg"], arrowcolor=p["muted"])
+        s.configure("TSeparator", background=p["border"])
+
+        # --- sidebar labels (panel background) ---
+        s.configure("Sidebar.TLabel", background=p["sidebar"], foreground=p["fg"])
+        s.configure("SidebarHead.TLabel", background=p["sidebar"],
+                    foreground=p["fg"], font=("Segoe UI", 11, "bold"))
+        s.configure("SidebarHint.TLabel", background=p["sidebar"],
+                    foreground=p["muted"], font=("Segoe UI", 8))
 
     # --- UI-ის აწყობა / (re)build ---
     def rebuild_ui(self):
@@ -647,34 +721,42 @@ class GisBoxApp(tk.Tk):
         self.apply_theme()
         p = self.palette
 
-        # ზედა ზოლი / top bar
-        topbar = ttk.Frame(self, padding=(8, 6))
+        # ზედა ზოლი / header
+        topbar = ttk.Frame(self, style="Header.TFrame", padding=(16, 10))
         topbar.pack(side="top", fill="x")
+        ttk.Label(topbar, text="GIS_BOX", style="Title.TLabel").pack(side="left")
+        ttk.Label(topbar, text=self.t("app_tagline"),
+                  style="Subtitle.TLabel").pack(side="left", padx=(12, 0))
 
-        ttk.Label(topbar, text=self.t("language")).pack(side="left")
-        self.lang_cb = ttk.Combobox(topbar, width=10, state="readonly",
-                                    values=list(LANGS.values()))
-        self.lang_cb.set(LANGS[self.lang])
-        self.lang_cb.pack(side="left", padx=(4, 16))
-        self.lang_cb.bind("<<ComboboxSelected>>", self.on_lang)
-
-        ttk.Label(topbar, text=self.t("theme")).pack(side="left")
-        self.theme_cb = ttk.Combobox(topbar, width=10, state="readonly",
+        # მარჯვნივ: ენა + თემა (მარჯვნიდან მარცხნივ იწყობა)
+        self.theme_cb = ttk.Combobox(topbar, width=9, state="readonly",
                                      values=[self.t("light"), self.t("dark")])
         self.theme_cb.set(self.t(self.theme))
-        self.theme_cb.pack(side="left", padx=(4, 0))
+        self.theme_cb.pack(side="right")
         self.theme_cb.bind("<<ComboboxSelected>>", self.on_theme)
+        ttk.Label(topbar, text=self.t("theme"), style="Header.TLabel").pack(
+            side="right", padx=(0, 6))
+        self.lang_cb = ttk.Combobox(topbar, width=9, state="readonly",
+                                    values=list(LANGS.values()))
+        self.lang_cb.set(LANGS[self.lang])
+        self.lang_cb.pack(side="right", padx=(16, 4))
+        self.lang_cb.bind("<<ComboboxSelected>>", self.on_lang)
+        ttk.Label(topbar, text=self.t("language"), style="Header.TLabel").pack(
+            side="right")
+
+        ttk.Frame(self, style="Sep.TFrame", height=1).pack(side="top", fill="x")
 
         # მთავარი ნაწილი / main body
         body = ttk.Frame(self)
         body.pack(side="top", fill="both", expand=True)
 
-        sidebar = ttk.Frame(body, padding=8)
+        sidebar = ttk.Frame(body, style="Sidebar.TFrame", padding=(12, 14))
         sidebar.pack(side="left", fill="y")
+        ttk.Frame(body, style="Sep.TFrame", width=1).pack(side="left", fill="y")
         ttk.Label(sidebar, text=self.t("tools"),
-                  font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 2))
-        ttk.Label(sidebar, text=self.t("reorder_hint"), foreground=p["muted"],
-                  font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 6))
+                  style="SidebarHead.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Label(sidebar, text=self.t("reorder_hint"),
+                  style="SidebarHint.TLabel").pack(anchor="w", pady=(0, 8))
 
         self.container = ttk.Frame(body)
         self.container.pack(side="left", fill="both", expand=True)
@@ -702,12 +784,12 @@ class GisBoxApp(tk.Tk):
             sidebar, width=24, height=len(self.tool_specs),
             activestyle="none", exportselection=False, highlightthickness=0,
             relief="flat", borderwidth=0,
-            bg=p["field_bg"], fg=p["fg"],
-            selectbackground=p["select"], selectforeground=p["fg"],
+            bg=p["sidebar"], fg=p["fg"],
+            selectbackground=p["accent"], selectforeground=p["accent_fg"],
             font=("Segoe UI", 10))
         for spec in self.tool_specs:
-            self.tool_list.insert("end", "  " + spec["name_" + self.lang])
-        self.tool_list.pack(anchor="w", fill="y", pady=2)
+            self.tool_list.insert("end", " " + spec["name_" + self.lang])
+        self.tool_list.pack(anchor="w", fill="y", pady=2, ipady=2)
         self.tool_list.bind("<Button-1>", self._tool_press)
         self.tool_list.bind("<B1-Motion>", self._tool_drag)
         self.tool_list.bind("<ButtonRelease-1>", self._tool_release)
