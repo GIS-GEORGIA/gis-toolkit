@@ -135,6 +135,7 @@ ZTR = {
 class ZoneIntersectTool(ToolFrame):
     tid = "zone_intersect"
     CATALOG = ZTR
+    DEFAULT_NAME = DEFAULT_OUT_NAME       # ქვეკლასი გადააბრუნებს
 
     def _state(self):
         return self.app.tool_state.setdefault(self.tid, {})
@@ -179,7 +180,7 @@ class ZoneIntersectTool(ToolFrame):
         ttk.Label(grid, text=self.tr("outname")).grid(row=3, column=0, sticky="w",
                                                       padx=6, pady=2)
         self.name_var = tk.StringVar(
-            value=st.get("outname") or saved.get("outname") or DEFAULT_OUT_NAME)
+            value=st.get("outname") or saved.get("outname") or self.DEFAULT_NAME)
         add_tip(ttk.Entry(grid, textvariable=self.name_var),
                 self.tr("tip_outname")).grid(row=3, column=1, sticky="ew",
                                              padx=(6, 6), pady=2)
@@ -445,7 +446,7 @@ class ZoneIntersectTool(ToolFrame):
             messagebox.showinfo("GIS_BOX", self.tr("warn_none"))
             return
         # სახელი: <base><ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
-        base = self._sanitize(self.name_var.get().strip() or DEFAULT_OUT_NAME)
+        base = self._sanitize(self.name_var.get().strip() or self.DEFAULT_NAME)
         znum = self._zone_num_from_crs(res["crs"])
         if znum and not base.endswith(znum):
             base = base + znum
@@ -484,3 +485,56 @@ class ZoneIntersectTool(ToolFrame):
         frame = self._handoff()
         if frame is not None and hasattr(frame, "_export"):
             frame._export()
+
+
+# ---- ხაზების გადაკვეთა (ხაზი × ხაზი) — იგივე ძრავა, სხვა შესავალი/სახელები ----
+# core-ის ლოგიკა ზოგადია (პოლიგონი→საზღვარი, ხაზი→თავად ხაზი), ამიტომ ეს ხელსაწყო
+# იგივე ZoneIntersectTool-ია, უბრალოდ ხაზ-ორიენტირებული წარწერებით/ნაგულისხმევებით.
+LTR = dict(ZTR)
+LTR.update({
+    "heading":  {"en": "Line crossing points",
+                 "ka": "ხაზების გადაკვეთის წერტილები"},
+    "desc":     {"en": "Pick two line shapefiles (e.g. a gas pipeline and a "
+                       "communication line); a point shapefile is created where "
+                       "they cross. The result feeds straight into "
+                       "“Shp → coordinates”.",
+                 "ka": "აირჩიე ორი ხაზოვანი shapefile (მაგ. გაზსადენი და "
+                       "კომუნიკაცია); იქმნება წერტილოვანი shapefile იქ, სადაც ისინი "
+                       "იკვეთება. შედეგი პირდაპირ გადადის „Shp → კოორდინატებში“."},
+    "section":  {"en": "Line crossing", "ka": "ხაზების გადაკვეთა"},
+    "parcel":   {"en": "Line 1 shp:", "ka": "ხაზი 1 (shp):"},
+    "zone":     {"en": "Line 2 shp:", "ka": "ხაზი 2 (shp):"},
+    "tip_parcel": {"en": "First line shapefile (e.g. the gas pipeline).",
+                   "ka": "პირველი ხაზოვანი shapefile (მაგ. გაზსადენი)."},
+    "tip_zone": {"en": "Second line shapefile (e.g. the communication line).",
+                 "ka": "მეორე ხაზოვანი shapefile (მაგ. კომუნიკაცია)."},
+    "warn_parcel": {"en": "Select a valid line-1 shapefile.",
+                    "ka": "აირჩიე პირველი ხაზის shapefile."},
+    "warn_zone": {"en": "Select a valid line-2 shapefile.",
+                  "ka": "აირჩიე მეორე ხაზის shapefile."},
+    "warn_none": {"en": "No crossing points found — the two lines do not cross "
+                        "for the selection.",
+                  "ka": "კვეთის წერტილი ვერ მოიძებნა — არჩეულ ხაზებს კვეთა არ აქვთ."},
+    "reading_zone": {"en": "Reading line-2 attributes…",
+                     "ka": "იკითხება ხაზი 2-ის ატრიბუტები…"},
+    "zfield":   {"en": "Line-2 field:", "ka": "ხაზი 2-ის ველი:"},
+    "zvalue":   {"en": "Value:", "ka": "მნიშვნელობა:"},
+    "all_zones": {"en": "— all —", "ka": "— ყველა —"},
+    "tip_zfield": {"en": "Attribute of line 2 to filter by (optional; leave for "
+                         "all).",
+                   "ka": "ხაზი 2-ის ატრიბუტი გასაფილტრად (არჩევითი; ყველასთვის "
+                         "დატოვე)."},
+    "tip_zvalue": {"en": "Which line-2 value to cross (or all).",
+                   "ka": "ხაზი 2-ის რომელი მნიშვნელობა იკვეთოს (ან ყველა)."},
+    "crs_warn": {"en": "Line 1 has no CRS (.prj); output will have none either "
+                       "and the zone must be chosen manually in "
+                       "“Shp → coordinates”.",
+                 "ka": "ხაზი 1-ს CRS (.prj) არ აქვს; შედეგსაც არ ექნება და UTM "
+                       "ზონა ხელით უნდა აირჩიო „Shp → კოორდინატებში“."},
+})
+
+
+class LineIntersectTool(ZoneIntersectTool):
+    tid = "line_intersect"
+    CATALOG = LTR
+    DEFAULT_NAME = "Line_Crossing"

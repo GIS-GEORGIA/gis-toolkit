@@ -109,6 +109,7 @@ TR = {
     "gdb2pg_name":  {"en": "GDB → PostGIS",         "ka": "GDB → PostGIS"},
     "geomcol_name": {"en": "Geometry → GeoPackage",  "ka": "გეომეტრიების შეგროვება"},
     "zoneint_name": {"en": "Zone intersection",     "ka": "დაცვის ზონის კვეთა"},
+    "lineint_name": {"en": "Line crossings",        "ka": "ხაზების გადაკვეთა"},
     "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
@@ -454,6 +455,11 @@ class GisBoxApp(tk.Tk):
             "factory": self._make_zoneint_tool,
         })
         specs.append({
+            "name_en": TR["lineint_name"]["en"], "name_ka": TR["lineint_name"]["ka"],
+            "tid": "line_intersect",
+            "factory": self._make_lineint_tool,
+        })
+        specs.append({
             "name_en": TR["gdb2pg_name"]["en"], "name_ka": TR["gdb2pg_name"]["ka"],
             "factory": self._make_gdb2pg_tool,
         })
@@ -510,6 +516,10 @@ class GisBoxApp(tk.Tk):
     def _make_zoneint_tool(self, master):
         from tools.zone_intersect import ZoneIntersectTool
         return ZoneIntersectTool(master, self)
+
+    def _make_lineint_tool(self, master):
+        from tools.zone_intersect import LineIntersectTool
+        return LineIntersectTool(master, self)
 
     def show_tool_by_tid(self, tid):
         """ხელსაწყოზე გადართვა tid-ით; აბრუნებს frame-ს (ან None). სხვა ხელსაწყოებს

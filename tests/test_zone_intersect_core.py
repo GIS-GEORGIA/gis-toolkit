@@ -2,7 +2,35 @@
 """zone_intersect_core — საზღვრების კვეთის წერტილების ტესტები (shapely)."""
 
 from shapely.geometry import Polygon, LineString, MultiPoint, GeometryCollection
-from tools.zone_intersect_core import _iter_points, crossing_points, collect_points
+from tools.zone_intersect_core import (
+    _iter_points, _as_curve, crossing_points, collect_points,
+)
+
+
+def test_as_curve_polygon_to_boundary_line_unchanged():
+    poly = Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])
+    assert _as_curve(poly).geom_type in ("LineString", "LinearRing")
+    ln = LineString([(0, 0), (1, 1)])
+    assert _as_curve(ln) is ln                      # ხაზი უცვლელი
+
+
+def test_crossing_points_line_x_line():
+    # გაზსადენი (ჰორიზონტ.) × კომუნიკაცია (ვერტიკ.) — იკვეთება (5,0)
+    gas = LineString([(0, 0), (10, 0)])
+    comm = LineString([(5, -5), (5, 5)])
+    pts = crossing_points(gas, comm)
+    assert [(round(x), round(y)) for x, y in pts] == [(5, 0)]
+
+
+def test_collect_points_line_x_line_multiple_ordered():
+    gas = LineString([(0, 0), (10, 0)])
+    # ორი ვერტიკალური კომუნიკაცია → ორი კვეთა (3,0) და (7,0)
+    c1 = LineString([(3, -1), (3, 1)])
+    c2 = LineString([(7, -1), (7, 1)])
+    pts = collect_points([gas], [c1, c2])
+    xs = [round(x) for x, _ in pts]
+    assert sorted(xs) == [3, 7]
+    assert len(pts) == 2
 
 
 def test_iter_points_point_and_multipoint():

@@ -43,11 +43,26 @@ def _iter_points(geom, out):
     # Polygon/MultiPolygon — უგულებელყოფილი
 
 
-def crossing_points(parcel, zone):
-    """ერთი ნაკვეთისა და ერთი ზონის საზღვრების კვეთის წერტილები [(x, y), …]."""
+def _as_curve(geom):
+    """პოლიგონი → საზღვარი (ხაზი); ხაზი/სხვა — უცვლელი.
+
+    ასე ერთი და იგივე ლოგიკა მუშაობს პოლიგონ×პოლიგონ (ნაკვეთი × დაცვის ზონა),
+    ხაზი×ხაზ (გაზსადენი × კომუნიკაცია) და შერეულ შემთხვევებზეც.
+    """
+    if geom.geom_type in ("Polygon", "MultiPolygon"):
+        return geom.boundary
+    return geom
+
+
+def crossing_points(a, b):
+    """ორი ობიექტის კვეთის წერტილები [(x, y), …].
+
+    პოლიგონები საზღვრად გადაიქცევა; ხაზები თავად რჩება — ამიტომ იჭერს
+    როგორც საზღვრების, ისე ხაზების კვეთას.
+    """
     out = []
     try:
-        inter = parcel.boundary.intersection(zone.boundary)
+        inter = _as_curve(a).intersection(_as_curve(b))
     except Exception:                       # noqa: BLE001 — გატეხილი გეომეტრია
         return out
     _iter_points(inter, out)
