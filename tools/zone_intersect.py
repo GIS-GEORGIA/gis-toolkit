@@ -288,6 +288,11 @@ class ZoneIntersectTool(ToolFrame):
                     vals = []
                 if vals:
                     meta[str(col)] = vals
+            # FID ფსევდო-ველი — რომ ატრიბუტ-გარეშე shp-საც (მაგ. სუფთა ხაზი)
+            # ჰქონდეს ავტო-შესავსები ველი და ობიექტის არჩევა ინდექსით.
+            n = len(df)
+            if 0 < n <= 1000:
+                meta["FID"] = [str(i) for i in range(n)]
             self.msg_queue.put(("zonemeta", meta))
         except Exception as e:                     # noqa: BLE001
             self.msg_queue.put(("zoneerr", str(e)))
@@ -348,9 +353,17 @@ class ZoneIntersectTool(ToolFrame):
             pgdf = gpd.read_file(parcel)
             zgdf = gpd.read_file(zone)
 
-            # ზონის ფილტრი ატრიბუტით
-            if field and field in zgdf.columns and value is not None:
-                zgdf = zgdf[zgdf[field].astype(str) == str(value)]
+            # ზონის ფილტრი: ატრიბუტით ან FID-ით (რიგის ინდექსით)
+            if value is not None and field:
+                if field in zgdf.columns:
+                    zgdf = zgdf[zgdf[field].astype(str) == str(value)]
+                elif field == "FID":
+                    try:
+                        i = int(value)
+                        if 0 <= i < len(zgdf):
+                            zgdf = zgdf.iloc[[i]]
+                    except (ValueError, TypeError):
+                        pass
 
             # CRS — ზონა ნაკვეთის სისტემაში
             target_crs = pgdf.crs
