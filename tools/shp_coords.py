@@ -144,6 +144,14 @@ RTR = {
                          "Close it and try again.",
                    "ka": "ვერ შეინახა — ფაილი Excel-ში გახსნილია. "
                          "დახურე და სცადე ხელახლა."},
+    "file_locked_q":{"en": "The file is open in Excel:\n{path}\n\n"
+                           "Close it (unsaved changes discarded) and continue?",
+                     "ka": "ფაილი Excel-ში გახსნილია:\n{path}\n\n"
+                           "დავხურო (შეუნახავი ცვლილებები დაიკარგება) და გავაგრძელო?"},
+    "file_close_fail":{"en": "Could not close the file automatically — please "
+                             "close it in Excel and try again.",
+                       "ka": "ფაილის ავტომატურად დახურვა ვერ მოხერხდა — დახურე "
+                             "Excel-ში და სცადე ხელახლა."},
     "load_err":  {"en": "Could not read the shapefile:",
                   "ka": "shapefile ვერ წაიკითხა:"},
 
@@ -674,14 +682,32 @@ class ShpCoordsTool(ToolFrame):
             return
 
         template, angle_on, angle_all, vtype = self._current_settings()
-        try:
+
+        def _write():
             self._write_workbook(
                 path, sheet_name=os.path.basename(shp), points=points,
                 value_type=vtype, template=template,
                 angle_on=angle_on, angle_all=angle_all)
+
+        try:
+            _write()
         except FileLockedError:
-            messagebox.showerror(self.tr("err"), self.tr("file_locked"))
-            return
+            # ფაილი Excel-ში ღიაა — ვკითხოთ, დავხუროთ და გავაგრძელოთ
+            if not messagebox.askyesno("GIS_BOX",
+                                       self.tr("file_locked_q", path=path)):
+                return
+            from tools.xlsx_format import close_open_workbook
+            import time
+            close_open_workbook(path)
+            time.sleep(0.4)                 # ბლოკი გათავისუფლდეს
+            try:
+                _write()
+            except FileLockedError:
+                messagebox.showerror(self.tr("err"), self.tr("file_close_fail"))
+                return
+            except Exception as e:
+                messagebox.showerror(self.tr("err"), str(e))
+                return
         except Exception as e:
             messagebox.showerror(self.tr("err"), str(e))
             return

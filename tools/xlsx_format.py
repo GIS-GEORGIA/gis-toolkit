@@ -34,6 +34,41 @@ def save_workbook(wb, path):
         raise FileLockedError(path) from e
 
 
+def close_open_workbook(path):
+    """თუ მითითებული .xlsx გახსნილია Excel-ში, დახუროს ეს კონკრეტული workbook
+    (ცვლილებების შენახვის გარეშე — ფაილს ისედაც თავიდან ვწერთ). აბრუნებს True-ს,
+    თუ ნაპოვნი და დახურული იქნა. სჭირდება Windows + Excel + pywin32; სხვაგან
+    (ან შეცდომისას) — False, და UI ძველ „დახურე ხელით“ შეტყობინებას აჩვენებს."""
+    import os
+    try:
+        import pythoncom
+        import win32com.client
+    except Exception:                      # noqa: BLE001 — pywin32 არ არის
+        return False
+
+    target = os.path.normcase(os.path.abspath(path))
+    pythoncom.CoInitialize()
+    try:
+        try:
+            xl = win32com.client.GetActiveObject("Excel.Application")
+        except Exception:                  # noqa: BLE001 — Excel არ არის გაშვებული
+            return False
+        closed = False
+        for wb in list(xl.Workbooks):
+            try:
+                if os.path.normcase(os.path.abspath(wb.FullName)) == target:
+                    wb.Close(SaveChanges=False)
+                    closed = True
+            except Exception:              # noqa: BLE001
+                continue
+        return closed
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:                  # noqa: BLE001
+            pass
+
+
 def clean_number(v):
     """მოსახერხებელ რიცხვად გადაქცევა, შეცდომებისგან თავისუფალი.
 

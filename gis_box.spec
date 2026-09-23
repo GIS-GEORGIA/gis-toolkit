@@ -18,6 +18,8 @@ datas = [
 binaries = []
 # ხელსაწყოები lazy-ად იტვირთება — ცხადად ჩავრთოთ ყველა submodule
 hiddenimports = collect_submodules("tools")
+# Excel-ის ღია ფაილის დახურვა COM-ით (Shp → კოორდინატები) — pywin32
+hiddenimports += ["win32com", "win32com.client", "pythoncom", "pywintypes"]
 
 # მძიმე პაკეტები — სრული შეგროვება (data ფაილები: GDAL, proj.db, OCR მოდელები…)
 for pkg in ["pyogrio", "pyproj", "shapely", "geopandas", "fiona", "rasterio",
