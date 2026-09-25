@@ -52,7 +52,7 @@ jobs:
       # პაკეტები (geopandas…) არ სჭირდება: ხელსაწყოს, რომელსაც ისინი აკლია,
       # error-frame უჩნდება — smoke-ტესტი სწორედ ამას ამოწმებს.
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest openpyxl
+        run: python -m pip install --upgrade pip pytest openpyxl shapely
 
       # xvfb-run — რეალური Tk ფანჯარა ვირტუალურ ეკრანზე (Linux GUI ვალიდაცია)
       - name: Run tests (incl. GUI smoke under xvfb)

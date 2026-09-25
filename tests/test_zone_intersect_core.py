@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """zone_intersect_core — საზღვრების კვეთის წერტილების ტესტები (shapely)."""
 
+import pytest
+
+pytest.importorskip("shapely")   # shapely-ის გარეშე გარემოში — skip, არა error
+
 from shapely.geometry import Polygon, LineString, MultiPoint, GeometryCollection
 from tools.zone_intersect_core import (
     _iter_points, _as_curve, crossing_points, collect_points,

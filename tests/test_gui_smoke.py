@@ -5,32 +5,41 @@ Linux CI-ში გაეშვება ``xvfb-run``-ით (ვირტუა
 გარეშე გარემოში ტესტი გამოტოვდება (skip), არ ჩავარდება. მძიმე GIS პაკეტები
 (geopandas და ა.შ.) არ არის საჭირო: ხელსაწყო, რომელსაც ისინი აკლია, „error
 frame“-ს აჩვენებს — სწორედ ესაა გათვალისწინებული ქცევა.
+
+**ერთი ფანჯარა მთელ მოდულზე** (module-scoped): Tk-ის ხელახალი შექმნა/განადგურება
+ერთ პროცესში არასტაბილურია (განსაკუთრებით Windows-ზე), ხოლო რეალურ პროგრამაშიც
+ერთი root არსებობს. ტესტები თანმიმდევრულად მუშაობენ ერთ მდგომარეობაზე; ბოლო
+ტესტი (თემა/ენა) აპს გადააგებს, ამიტომ ბოლოშია.
 """
 
-import os
+import json
 
 import pytest
 
 tk = pytest.importorskip("tkinter")
 
 
-@pytest.fixture()
-def app(tmp_path, monkeypatch):
+@pytest.fixture(scope="module")
+def app(tmp_path_factory):
     """GisBoxApp დროებითი კონფიგით (რეალურ პარამეტრებს არ ეხება)."""
-    monkeypatch.setenv("GIS_BOX_DATA_DIR", str(tmp_path))
+    data = tmp_path_factory.mktemp("gis_box_data")
+    mp = pytest.MonkeyPatch()
+    mp.setenv("GIS_BOX_DATA_DIR", str(data))
     import gis_box
-    monkeypatch.setattr(gis_box, "SETTINGS_FILE",
-                        str(tmp_path / "gis_box_settings.json"))
+    mp.setattr(gis_box, "SETTINGS_FILE", str(data / "gis_box_settings.json"))
     try:
         a = gis_box.GisBoxApp()
     except tk.TclError as e:                       # ეკრანი არ არის (headless)
+        mp.undo()
         pytest.skip("no display available: %s" % e)
     a.withdraw()
+    a.data_path = data
     yield a
     try:
         a.destroy()
     except tk.TclError:
         pass
+    mp.undo()
 
 
 def test_window_builds_with_all_tools_listed(app):
@@ -47,21 +56,22 @@ def test_every_tool_opens_or_shows_a_graceful_error_frame(app):
 
 
 def test_drag_reorder_moves_spec_frame_and_row_together(app):
-    first = app.tool_specs[0]["key"]
-    last = app.tool_specs[-1]["key"]
-    app._move_tool(0, len(app.tool_specs) - 1)
-    assert app.tool_specs[-1]["key"] == first
-    assert app.tool_specs[0]["key"] != first
-    assert app.tool_list.size() == len(app.tool_specs)
-    assert last in [s["key"] for s in app.tool_specs]
+    keys_before = [s["key"] for s in app.tool_specs]
+    n = len(keys_before)
+    app._move_tool(0, n - 1)
+    keys_after = [s["key"] for s in app.tool_specs]
+    assert keys_after[-1] == keys_before[0]
+    assert keys_after[:-1] == keys_before[1:]      # დანარჩენი ერთით ავიდა
+    assert app.tool_list.size() == n
+    assert len(app.frames) == n
 
 
-def test_reorder_persists_across_restart(app, tmp_path):
-    import json
+def test_reorder_persists_to_settings_file(app):
     app._move_tool(0, 3)
     expected = [s["key"] for s in app.tool_specs]
     app.save_settings()
-    saved = json.loads((tmp_path / "gis_box_settings.json").read_text("utf-8"))
+    saved = json.loads(
+        (app.data_path / "gis_box_settings.json").read_text("utf-8"))
     assert saved["tool_order"] == expected
 
 
