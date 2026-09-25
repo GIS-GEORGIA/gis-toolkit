@@ -19,6 +19,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
 from tools.zone_intersect_core import collect_points
 
@@ -151,7 +152,7 @@ class ZoneIntersectTool(ToolFrame):
         self._last_output = None
 
         ttk.Label(self, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 4))
+                  font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=760, justify="left").pack(anchor="w", pady=(0, 12))
 

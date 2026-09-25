@@ -142,6 +142,7 @@ THEMES = {
 # ToolFrame გატანილია tools/base.py-ში, რომ ხელსაწყოებმაც და აქაც ერთი კლასი
 # გამოიყენონ (gis_box __main__-ის ხელახლა იმპორტის გარეშე).
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT, MONO_FONT
 from tools.i18n import translate
 from tools.tooltip import add_tip
 
@@ -165,7 +166,7 @@ class TemplateCopier(ToolFrame):
         st = self._state()
 
         ttk.Label(self, text=self.title(),
-                  font=("Segoe UI", 13, "bold")).grid(
+                  font=(UI_FONT, 13, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
 
         ttk.Label(self, text=self.t("tc_desc"), foreground=pal["muted"],
@@ -382,8 +383,13 @@ class GisBoxApp(tk.Tk):
             pass
         self.title("GIS_BOX")
         self.minsize(860, 560)
-        try:                       # ფანჯრის ხატულა (Windows-ზე .ico)
-            self.iconbitmap(os.path.join(APP_DIR, "gis_box.ico"))
+        try:                       # ფანჯრის ხატულა: Windows — .ico, Linux/macOS — .png
+            if sys.platform == "win32":
+                self.iconbitmap(os.path.join(APP_DIR, "gis_box.ico"))
+            else:
+                self._icon_img = tk.PhotoImage(
+                    file=os.path.join(APP_DIR, "gis_box.png"))   # ბმული უნდა შეინახოს
+                self.iconphoto(True, self._icon_img)
         except tk.TclError:
             pass
 
@@ -546,12 +552,12 @@ class GisBoxApp(tk.Tk):
         p = self.palette
         frame = ttk.Frame(self.container, padding=20)
         ttk.Label(frame, text=self.t("tool_load_err"),
-                  font=("Segoe UI", 13, "bold"), foreground="#c0392b").pack(
+                  font=(UI_FONT, 13, "bold"), foreground="#c0392b").pack(
             anchor="w", pady=(0, 8))
         ttk.Label(frame, text=self.t("tool_dep_hint")).pack(anchor="w")
         ttk.Label(frame, text="pip install -r requirements.txt",
-                  font=("Consolas", 10)).pack(anchor="w", pady=(2, 10))
-        box = tk.Text(frame, height=10, wrap="word", font=("Consolas", 9),
+                  font=(MONO_FONT, 10)).pack(anchor="w", pady=(2, 10))
+        box = tk.Text(frame, height=10, wrap="word", font=(MONO_FONT, 9),
                       bg=p["log_bg"], fg=p["log_fg"], relief="flat", borderwidth=0)
         box.insert("1.0", f"{type(exc).__name__}: {exc}\n\n{traceback.format_exc()}")
         box.configure(state="disabled")
@@ -627,8 +633,8 @@ class GisBoxApp(tk.Tk):
         p = self.palette
         self.configure(bg=p["bg"])
         s = self.style
-        base = ("Segoe UI", 10)
-        bold = ("Segoe UI", 10, "bold")
+        base = (UI_FONT, 10)
+        bold = (UI_FONT, 10, "bold")
 
         s.configure(".", background=p["bg"], foreground=p["fg"],
                     fieldbackground=p["field_bg"], font=base,
@@ -646,11 +652,11 @@ class GisBoxApp(tk.Tk):
         s.configure("Muted.TLabel", background=p["bg"], foreground=p["muted"])
         s.configure("Header.TLabel", background=p["header"], foreground=p["fg"])
         s.configure("Title.TLabel", background=p["header"], foreground=p["accent"],
-                    font=("Segoe UI", 15, "bold"))
+                    font=(UI_FONT, 15, "bold"))
         s.configure("Subtitle.TLabel", background=p["header"],
-                    foreground=p["muted"], font=("Segoe UI", 9))
+                    foreground=p["muted"], font=(UI_FONT, 9))
         s.configure("H.TLabel", background=p["bg"], foreground=p["fg"],
-                    font=("Segoe UI", 13, "bold"))
+                    font=(UI_FONT, 13, "bold"))
 
         # --- label-frames (cards) ---
         s.configure("TLabelframe", background=p["bg"], bordercolor=p["border"],
@@ -710,9 +716,9 @@ class GisBoxApp(tk.Tk):
         # --- sidebar labels (panel background) ---
         s.configure("Sidebar.TLabel", background=p["sidebar"], foreground=p["fg"])
         s.configure("SidebarHead.TLabel", background=p["sidebar"],
-                    foreground=p["fg"], font=("Segoe UI", 11, "bold"))
+                    foreground=p["fg"], font=(UI_FONT, 11, "bold"))
         s.configure("SidebarHint.TLabel", background=p["sidebar"],
-                    foreground=p["muted"], font=("Segoe UI", 8))
+                    foreground=p["muted"], font=(UI_FONT, 8))
 
     # --- UI-ის აწყობა / (re)build ---
     def rebuild_ui(self):
@@ -781,7 +787,7 @@ class GisBoxApp(tk.Tk):
         ttk.Button(logbar, text=self.t("log_clear"), command=self.clear_log).pack(
             side="right", padx=(0, 4))
         self.logbox = tk.Text(logframe, height=7, wrap="word",
-                              font=("Consolas", 9), state="disabled",
+                              font=(MONO_FONT, 9), state="disabled",
                               bg=p["log_bg"], fg=p["log_fg"],
                               insertbackground=p["fg"], relief="flat",
                               borderwidth=0)
@@ -800,7 +806,7 @@ class GisBoxApp(tk.Tk):
             relief="flat", borderwidth=0,
             bg=p["sidebar"], fg=p["fg"],
             selectbackground=p["accent"], selectforeground=p["accent_fg"],
-            font=("Segoe UI", 10))
+            font=(UI_FONT, 10))
         for spec in self.tool_specs:
             self.tool_list.insert("end", " " + spec["name_" + self.lang])
         self.tool_list.pack(anchor="w", fill="y", pady=2, ipady=2)

@@ -24,6 +24,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 pyogrio = None                     # lazy; დანიშნულება — ფონურ worker-ებში
 
 from tools.base import ToolFrame
+from tools.platform_utils import MONO_FONT, default_desktop
 from tools.tooltip import add_tip
 
 
@@ -284,7 +285,7 @@ class ParcelSearchTool(ToolFrame):
                 tr("tip_load")).pack(side="right")
         ttk.Button(bar, text=tr("btn_clear"), command=lambda: self.codes_text.delete("1.0", "end")).pack(side="right", padx=4)
 
-        self.codes_text = scrolledtext.ScrolledText(inp, height=8, font=("Consolas", 10))
+        self.codes_text = scrolledtext.ScrolledText(inp, height=8, font=(MONO_FONT, 10))
         self.codes_text.pack(fill="both", expand=True, padx=6, pady=4)
         if st.get("codes"):
             self.codes_text.insert("1.0", st["codes"])
@@ -292,7 +293,7 @@ class ParcelSearchTool(ToolFrame):
         # --- გამომავალი ფაილი ---
         out = ttk.LabelFrame(self, text=tr("sec_out"))
         out.pack(fill="x", **pad)
-        default_out = os.path.join(os.path.expanduser("~"), "Desktop", "found_parcels.shp")
+        default_out = os.path.join(default_desktop(), "found_parcels.shp")
         self.out_var = tk.StringVar(value=initial("out", default_out))
         ttk.Entry(out, textvariable=self.out_var, width=70).grid(row=0, column=0, sticky="we", padx=6, pady=6)
         ttk.Button(out, text="...", width=3, command=self._browse_out).grid(row=0, column=1, padx=6)
@@ -325,7 +326,7 @@ class ParcelSearchTool(ToolFrame):
         # --- შედეგები / ლოგი ---
         res = ttk.LabelFrame(self, text=tr("sec_result"))
         res.pack(fill="both", expand=True, **pad)
-        self.log_text = scrolledtext.ScrolledText(res, height=10, font=("Consolas", 10), state="disabled")
+        self.log_text = scrolledtext.ScrolledText(res, height=10, font=(MONO_FONT, 10), state="disabled")
         self.log_text.pack(fill="both", expand=True, padx=6, pady=4)
         add_tip(ttk.Button(res, text=tr("btn_save_nf"), command=self._save_not_found),
                 tr("tip_save_nf")).pack(side="right", padx=6, pady=4)

@@ -41,10 +41,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # მხოლოდ მსუბუქი დამოკიდებულებები — სუფთა-ლოგიკის ტესტები (translit,
-      # regions, export/format_xlsx). GIS/tkinter პაკეტები არ სჭირდება.
+      # Linux-ზე GUI smoke-ტესტისთვის: tkinter-ის სისტემური ბიბლიოთეკები, ვირტუალური
+      # ეკრანი (xvfb) და DejaVu შრიფტი (ქართული გლიფები).
+      - name: Install Linux GUI dependencies (tk, xvfb, fonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb fonts-dejavu-core
+
+      # მსუბუქი დამოკიდებულებები — სუფთა-ლოგიკის ტესტები + GUI smoke. მძიმე GIS
+      # პაკეტები (geopandas…) არ სჭირდება: ხელსაწყოს, რომელსაც ისინი აკლია,
+      # error-frame უჩნდება — smoke-ტესტი სწორედ ამას ამოწმებს.
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pytest openpyxl
 
-      - name: Run tests
-        run: python -m pytest -q
+      # xvfb-run — რეალური Tk ფანჯარა ვირტუალურ ეკრანზე (Linux GUI ვალიდაცია)
+      - name: Run tests (incl. GUI smoke under xvfb)
+        run: xvfb-run -a python -m pytest -q

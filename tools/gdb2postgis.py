@@ -20,6 +20,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
 from tools import gdb2postgis_core as core
 from tools.gdb2postgis_state import SyncState
@@ -264,7 +265,7 @@ class Gdb2PostgisTool(ToolFrame):
                                           canvas.unbind_all("<Button-5>")))
 
         ttk.Label(body, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+                  font=(UI_FONT, 13, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
         ttk.Label(body, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=680, justify="left").grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(0, 10))
@@ -416,7 +417,7 @@ class Gdb2PostgisTool(ToolFrame):
             self.bg_cb.configure(state="disabled")
         self.next_run_var = tk.StringVar(value=self.tr("sched_off"))
         ttk.Label(sched, textvariable=self.next_run_var,
-                  font=("Segoe UI", 9, "bold")).grid(row=2, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 0))
+                  font=(UI_FONT, 9, "bold")).grid(row=2, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 0))
         ttk.Label(sched, text=self.tr("sched_hint"), foreground=pal["muted"],
                   wraplength=660, justify="left").grid(row=3, column=0, columnspan=4, sticky="w", padx=4)
 

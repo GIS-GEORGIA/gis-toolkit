@@ -8,7 +8,8 @@
 
 def _font(size):
     from PIL import ImageFont
-    for name in ("sylfaen.ttf", "segoeui.ttf", "arial.ttf"):
+    from tools.platform_utils import pil_font_candidates
+    for name in pil_font_candidates():
         try:
             return ImageFont.truetype(name, size)
         except OSError:

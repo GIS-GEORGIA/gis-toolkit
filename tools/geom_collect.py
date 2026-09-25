@@ -11,14 +11,13 @@
 
 import os
 import queue
-import subprocess
-import sys
 import threading
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT, open_path, default_desktop
 from tools.tooltip import add_tip
 from tools.geom_collect_core import (
     iter_geometry_files, collect_to_geopackage,
@@ -143,7 +142,7 @@ class GeomCollectTool(ToolFrame):
         self._cancel_event = threading.Event()
 
         ttk.Label(self, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 4))
+                  font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=760, justify="left").pack(anchor="w", pady=(0, 12))
 
@@ -163,7 +162,7 @@ class GeomCollectTool(ToolFrame):
         # გამომავალი
         ttk.Label(grid, text=self.tr("out")).grid(row=1, column=0, sticky="w")
         default_out = st.get("out") or saved.get("out") or os.path.join(
-            os.path.expanduser("~"), "Desktop", "collected_geometry.gpkg")
+            default_desktop(), "collected_geometry.gpkg")
         self.out_var = tk.StringVar(value=default_out)
         ttk.Entry(grid, textvariable=self.out_var).grid(
             row=1, column=1, sticky="ew", padx=(6, 6), pady=2)
@@ -297,12 +296,7 @@ class GeomCollectTool(ToolFrame):
             messagebox.showwarning("GIS_BOX", self.tr("warn_out"))
             return
         try:
-            if sys.platform == "win32":
-                os.startfile(d)                       # noqa: S606
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", d])
-            else:
-                subprocess.Popen(["xdg-open", d])
+            open_path(d)                              # Explorer / Finder / xdg-open
         except Exception as e:                        # noqa: BLE001
             messagebox.showerror(self.tr("err"), str(e))
 

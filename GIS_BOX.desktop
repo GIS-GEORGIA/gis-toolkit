@@ -1,4 +1,5 @@
-# Linux desktop launcher.
+# Linux desktop launcher (ხელით ვარიანტი). უფრო მარტივია: `sh install_linux.sh` —
+# ის ამ ფაილს სწორი გზებით თავად ქმნის. ხელით თუ გინდა:
 # შეცვალე /PATH/TO/GIS_BOX სამივე ხაზზე რეალურ გზაზე, შემდეგ:
 #   chmod +x GIS_BOX.desktop  და გადააკოპირე ~/.local/share/applications/-ში
 #   (ან Desktop-ზე და მარჯვენა-კლიკით "Allow Launching").

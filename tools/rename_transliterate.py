@@ -22,6 +22,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT, MONO_FONT
 from tools.tooltip import add_tip
 # სუფთა ლოგიკა ცალკე მოდულში (ტესტირებადი, tkinter-ის გარეშე)
 from tools.translit import GEO2LAT, GEO_RANGE, transliterate, _sibling, feature_count
@@ -125,7 +126,7 @@ class RenameTransliterateTool(ToolFrame):
         self._undo = []          # ბოლო გადარქმევა: (ახალი_გზა, ძველი_გზა)
 
         ttk.Label(self, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 4))
+                  font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=620, justify="left").pack(anchor="w", pady=(0, 12))
 
@@ -167,7 +168,7 @@ class RenameTransliterateTool(ToolFrame):
         ttk.Label(self, text=self.tr("col_hint"),
                   foreground=pal["muted"]).pack(anchor="w")
         self.preview = scrolledtext.ScrolledText(
-            self, height=16, font=("Consolas", 10), state="disabled",
+            self, height=16, font=(MONO_FONT, 10), state="disabled",
             bg=pal["log_bg"], fg=pal["log_fg"], relief="flat", borderwidth=0)
         self.preview.pack(fill="both", expand=True, pady=(2, 0))
 

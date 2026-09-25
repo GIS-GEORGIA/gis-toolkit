@@ -6,6 +6,7 @@
 """
 
 import tkinter as tk
+from tools.platform_utils import UI_FONT
 
 
 class Tooltip:
@@ -48,7 +49,7 @@ class Tooltip:
             pass
         tk.Label(tw, text=self.text, justify="left", background="#ffffe0",
                  foreground="#1a1a1a", relief="solid", borderwidth=1,
-                 font=("Segoe UI", 9), wraplength=380, padx=6, pady=3).pack()
+                 font=(UI_FONT, 9), wraplength=380, padx=6, pady=3).pack()
 
     def _hide(self, _e=None):
         self._cancel()

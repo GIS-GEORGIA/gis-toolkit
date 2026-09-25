@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT, MONO_FONT
 from tools.tooltip import add_tip
 
 # map_services.txt — user-editable, ჩაშენებული ნაგულისხმევით. ჯერ ჩასაწერ
@@ -69,7 +70,7 @@ class MapServicesTool(ToolFrame):
         self.rowconfigure(2, weight=1)
 
         ttk.Label(self, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).grid(
+                  font=(UI_FONT, 13, "bold")).grid(
             row=0, column=0, sticky="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=640, justify="left").grid(
@@ -108,7 +109,7 @@ class MapServicesTool(ToolFrame):
         box.grid(row=i, column=0, sticky="ew", padx=2, pady=4)
         box.columnconfigure(0, weight=1)
         var = tk.StringVar(value=url)
-        ent = ttk.Entry(box, textvariable=var, font=("Consolas", 9))
+        ent = ttk.Entry(box, textvariable=var, font=(MONO_FONT, 9))
         ent._var = var                                # რეფ. GC-ს გადასარჩენად
         ent.bind("<Key>", lambda e: "break")          # read-only, მაგრამ ჩანს
         ent.grid(row=0, column=0, sticky="ew")

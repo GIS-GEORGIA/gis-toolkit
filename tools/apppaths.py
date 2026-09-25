@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
 """აპლიკაციის საქაღალდეები — ჩაშენებული რესურსები vs ჩასაწერი კონფიგი.
 
-PyInstaller-ით აწყობისას (``sys.frozen``) ორი სხვადასხვა ადგილია:
+ორი განსხვავებული ადგილია:
 
 * **რესურსები** (read-only: shp შაბლონები, ხატულა…) — ბანდლშია, ``_internal``
-  (``sys._MEIPASS``). ``resource_dir()``.
+  (``sys._MEIPASS``), ან რეპოს ძირი. ``resource_dir()``.
 * **მომხმარებლის კონფიგი** (ჩასაწერი: პარამეტრები, GDB გზა, ქუდები…) —
-  ცალკე, სტაბილურ საქაღალდეში, რომ **ხელახალ აწყობას არ წაეშალოს**.
-  ``data_dir()``.
+  ცალკე, სტაბილურ საქაღალდეში. ``data_dir()``.
 
-⚠️ ``dist\\GIS_BOX\\`` მთლიანად იშლება ყოველ აწყობაზე — ამიტომ კონფიგი მის
-შიგნით ვერ ვინახავთ. ნაგულისხმევად: ``%LOCALAPPDATA%\\GIS_BOX`` (build-ს არ
-ეხება). არჩევანი (პრიორიტეტით):
+⚠️ PyInstaller-ის ``dist\\GIS_BOX\\`` მთლიანად იშლება ყოველ აწყობაზე, ხოლო
+დაინსტალირებული Linux პაკეტი (``/opt/gis-box``) read-only-ა — ამიტომ კონფიგი
+პროგრამის საქაღალდეში არ უნდა ინახებოდეს. არჩევანი (პრიორიტეტით):
 
-  1. ``GIS_BOX_DATA_DIR`` გარემოს ცვლადი — თუ დაყენებულია.
-  2. „პორტატული“: exe-ს გვერდით ``GIS_BOX_config`` საქაღალდე — თუ არსებობს
-     (გამოსადეგი, როცა აპლიკაცია build-ის გარეთაა გადატანილი/deployed).
-  3. ``%LOCALAPPDATA%\\GIS_BOX`` (Windows) / ``~/.config/GIS_BOX`` (სხვა).
-
-დეველოპერულ (არა-frozen) რეჟიმში ორივე რეპოს ძირია — ძველი ქცევა უცვლელი.
+  1. ``GIS_BOX_DATA_DIR`` გარემოს ცვლადი — თუ დაყენებულია (ყველა რეჟიმში).
+  2. „პორტატული“ (frozen): exe-ს გვერდით ``GIS_BOX_config`` საქაღალდე — თუ არსებობს.
+  3. dev checkout (არა-frozen) და რეპოს ძირი **ჩასაწერია** → რეპოს ძირი
+     (ძველი ქცევა, უცვლელი).
+  4. სხვა შემთხვევაში — მომხმარებლის კონფიგ-საქაღალდე OS-ის კონვენციით:
+       Windows ``%LOCALAPPDATA%\\GIS_BOX`` · macOS ``~/Library/Application Support/GIS_BOX``
+       · Linux ``$XDG_CONFIG_HOME/GIS_BOX`` (ნაგულისხმევად ``~/.config/GIS_BOX``).
 """
 
 import os
@@ -41,27 +41,35 @@ def resource_dir():
     return _REPO_ROOT
 
 
+def user_config_base():
+    """მომხმარებლის კონფიგების ზოგადი საქაღალდე ამ OS-ისთვის (აპის სახელის გარეშე)."""
+    home = os.path.expanduser("~")
+    if sys.platform == "win32":
+        return (os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+                or os.path.join(home, "AppData", "Local"))
+    if sys.platform == "darwin":
+        return os.path.join(home, "Library", "Application Support")
+    return os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+
+
+def _writable(path):
+    """საქაღალდე არსებობს და ჩასაწერია."""
+    return os.path.isdir(path) and os.access(path, os.W_OK)
+
+
 def data_dir():
-    """ჩასაწერი მომხმარებლის კონფიგის ბაზა (frozen: build-ს გარეთ, სტაბილური).
-
-    საქაღალდე იქმნება, თუ არ არსებობს.
-    """
-    if not is_frozen():
-        return _REPO_ROOT
-
+    """ჩასაწერი მომხმარებლის კონფიგის ბაზა (იქმნება, თუ არ არსებობს)."""
     env = os.environ.get("GIS_BOX_DATA_DIR")
     if env:
         d = env
-    else:
-        exe_dir = os.path.dirname(sys.executable)
-        portable = os.path.join(exe_dir, "GIS_BOX_config")
-        if os.path.isdir(portable):
-            d = portable
-        else:
-            base = (os.environ.get("LOCALAPPDATA")
-                    or os.environ.get("APPDATA")
-                    or os.path.join(os.path.expanduser("~"), ".config"))
-            d = os.path.join(base, _APP_NAME)
+    elif is_frozen():
+        portable = os.path.join(os.path.dirname(sys.executable), "GIS_BOX_config")
+        d = portable if os.path.isdir(portable) \
+            else os.path.join(user_config_base(), _APP_NAME)
+    elif _writable(_REPO_ROOT):
+        return _REPO_ROOT                     # dev checkout — ძველი ქცევა
+    else:                                     # read-only install (მაგ. /opt, /usr/share)
+        d = os.path.join(user_config_base(), _APP_NAME)
     try:
         os.makedirs(d, exist_ok=True)
     except OSError:

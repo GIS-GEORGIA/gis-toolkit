@@ -103,6 +103,35 @@ python gis_box.py
 ან Windows-ზე ორმაგი დაწკაპუნებით: `GIS_BOX.bat`.
 Or on Windows double-click `GIS_BOX.bat`.
 
+### Linux (და macOS)
+
+პროგრამა Linux-ზეც მუშაობს — ერთი და იგივე კოდი, პლატფორმაზე დამოკიდებული ნაწილები
+(შრიფტები, ფაილის გახსნა, ხატულა, კონფიგის საქაღალდე) ავტომატურად ირჩევა
+(`tools/platform_utils.py`, `tools/apppaths.py`).
+
+The program runs on Linux too — same code; platform-specific parts (fonts, opening files,
+window icon, config folder) are chosen automatically.
+
+```bash
+sudo apt install python3-tk python3-venv fonts-dejavu-core   # Debian/Ubuntu
+sh install_linux.sh          # .venv + დამოკიდებულებები + მენიუს ჩანაწერი / venv + deps + menu entry
+./GIS_BOX.sh                 # გაშვება / run
+```
+
+- **tkinter** სისტემური პაკეტია (`python3-tk`; Fedora: `python3-tkinter`; Arch: `tk`).
+- **ქართული ტექსტი:** DejaVu Sans ფარავს ქართულს (ჩვეულებრივ უკვე დაყენებულია).
+- **პარამეტრები** ინახება `~/.config/GIS_BOX/` (ან `$XDG_CONFIG_HOME/GIS_BOX`); `.deb`/`.rpm`-ით
+  დაყენებისასაც (`/opt/gis-box` read-only-ა). `GIS_BOX_DATA_DIR`-ით შეგიძლია სხვა ადგილი მიუთითო.
+  Settings live in `~/.config/GIS_BOX/`; override with `GIS_BOX_DATA_DIR`.
+- **ჯერ მხოლოდ Windows-ზე** (Linux-ზე ჩუმად გამოირთვება, დანარჩენი მუშაობს): Excel-ის ღია
+  ფაილის ავტო-დახურვა (COM), ცხრილის HTML-ად კოპირება ბუფერში (Linux-ზე — მხოლოდ ტექსტი),
+  GDB → PostGIS-ის ფონური განრიგი Task Scheduler-ით (Linux-ზე გამოიყენე `cron` ბრძანებით
+  `python gis_box.py --gdb2pg-run`; აპლიკაციაშივე განრიგი მუშაობს).
+  Windows-only for now (silently disabled on Linux): auto-closing an open Excel file,
+  HTML clipboard tables (text only on Linux), Task Scheduler background sync (use `cron`).
+- GDB → PostGIS-ს სჭირდება `ogr2ogr` (`sudo apt install gdal-bin`) — PATH-ში ავტომატურად ჩანს.
+- CI ამოწმებს Linux-ზე მთელ ფანჯარას რეალურად (xvfb + GUI smoke-ტესტი).
+
 ### დამოკიდებულებები / Dependencies
 
 ბაზისური ხელსაწყო (შაბლონის კოპირება) მხოლოდ სტანდარტულ ბიბლიოთეკას იყენებს.
@@ -181,7 +210,9 @@ GIS_BOX/
 ├─ shp/                      # შაბლონური shapefile-ები (ცარიელი / საჯარო UTM ბადე)
 ├─ config.example.txt        # კონფიგის ნიმუში (config.txt git-ignored)
 ├─ map_services.txt          # რუკის სერვისების სია (სახელი / URL ხაზ-ხაზ)
-├─ GIS_BOX.bat / .command / .desktop  # გამშვებები Windows / macOS / Linux
+├─ GIS_BOX.bat / .command / .sh / .desktop  # გამშვებები Windows / macOS / Linux
+├─ install_linux.sh          # Linux: .venv + დამოკიდებულებები + მენიუს ჩანაწერი
+│  ├─ platform_utils.py     # შრიფტები / ფაილის გახსნა / Desktop — Win·Mac·Linux
 ├─ requirements.txt          # ხელსაწყოების დამოკიდებულებები
 └─ requirements-dev.txt      # ტესტების/დეველოპმენტის დამოკიდებულებები
 ```

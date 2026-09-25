@@ -22,6 +22,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from tools.base import ToolFrame
+from tools.platform_utils import UI_FONT, MONO_FONT, GEO_FONT, open_path
 from tools.tooltip import add_tip
 from tools.translit import lat_to_geo
 from tools.clipboard_html import copy_table, copy_image
@@ -264,12 +265,7 @@ class ShpCoordsTool(ToolFrame):
             # ფაილში მხოლოდ მომხმარებლის ქუდები (ჩაშენებულები ისედ ჩამონათვალშია)
             self._write_file_templates(self._file_templates())
         try:
-            if sys.platform == "win32":
-                os.startfile(TEMPLATES_FILE)            # noqa: S606
-            elif sys.platform == "darwin":
-                __import__("subprocess").run(["open", TEMPLATES_FILE])
-            else:
-                __import__("subprocess").run(["xdg-open", TEMPLATES_FILE])
+            open_path(TEMPLATES_FILE)               # Notepad / xdg-open / Finder
         except Exception as e:  # noqa: BLE001
             messagebox.showerror(self.tr("err"), str(e))
             return
@@ -283,7 +279,7 @@ class ShpCoordsTool(ToolFrame):
         self._detected_zone = None
 
         ttk.Label(self, text=self.tr("heading"),
-                  font=("Segoe UI", 13, "bold")).grid(
+                  font=(UI_FONT, 13, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"],
                   wraplength=620, justify="left").grid(
@@ -341,7 +337,7 @@ class ShpCoordsTool(ToolFrame):
         # ვერ აჩვენებს („????“); Sylfaen უჭერს მხარს.
         self.tmpl_combo = ttk.Combobox(trow, textvariable=self.tmpl_var, width=48,
                                        postcommand=self._refresh_templates,
-                                       font=("Sylfaen", 11))
+                                       font=(GEO_FONT, 11))
         self.tmpl_combo.pack(side="left", fill="x", expand=True, padx=(6, 6))
         self._migrate_config_templates()       # ძველი „????“-ები კონფიგიდან გაქრეს
         self._refresh_templates()
@@ -431,12 +427,12 @@ class ShpCoordsTool(ToolFrame):
         ttk.Label(frm, text=self.tr("conv_hint"), foreground=pal["muted"],
                   wraplength=480, justify="left").pack(anchor="w", pady=(2, 4))
         lat_var = tk.StringVar(value=initial)
-        ent = ttk.Entry(frm, textvariable=lat_var, width=64, font=("Consolas", 11))
+        ent = ttk.Entry(frm, textvariable=lat_var, width=64, font=(MONO_FONT, 11))
         ent.pack(fill="x", pady=(0, 6))
         ent.focus_set()
         ttk.Label(frm, text=self.tr("conv_geo")).pack(anchor="w")
         geo_var = tk.StringVar()
-        ttk.Label(frm, textvariable=geo_var, font=("Sylfaen", 13),
+        ttk.Label(frm, textvariable=geo_var, font=(GEO_FONT, 13),
                   wraplength=480, justify="left").pack(anchor="w", pady=(0, 10))
         lat_var.trace_add("write", lambda *a: geo_var.set(lat_to_geo(lat_var.get())))
         geo_var.set(lat_to_geo(lat_var.get()))
