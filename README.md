@@ -13,6 +13,8 @@ GIS_BOX-ში მხოლოდ **სივრცითი / GIS** ხელ�
 GIS_BOX holds **spatial / GIS** tools only — Map services included. Office-document
 tools (Document search, Collect files) live in a separate project — [Toolbox](../Toolbox).
 
+📘 **ტექნიკური აღწერა / Technical overview:** [docs/TECHNICAL.md](docs/TECHNICAL.md) — არქიტექტურა, ალგორითმები, შეფუთვა, ტესტირება.
+
 ---
 
 ## ინსტრუმენტები / Tools
