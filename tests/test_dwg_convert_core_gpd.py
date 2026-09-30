@@ -10,12 +10,14 @@
 """
 
 import os
+import subprocess
 
 import pytest
 
 gpd = pytest.importorskip("geopandas")
 from shapely.geometry import Point, LineString, Polygon  # noqa: E402
 from tools.dwg_convert_core import convert_file, convert_batch  # noqa: E402
+import tools.gdb2postgis_core as g2p_core                # noqa: E402
 
 
 def _make_source(path, mixed=True):
@@ -99,3 +101,38 @@ def test_convert_batch_cancel_stops_early(tmp_path):
     res = convert_batch([src1, src2], str(tmp_path / "out"), "gpkg",
                         cancel=lambda: True)
     assert res["cancelled"] is True
+
+
+def test_dwg_bridge_success_reads_via_temp_gpkg_and_names_output_from_dwg(
+        tmp_path, monkeypatch):
+    """DWG-ის „წარმატებული" ბილიკის სრული ინტეგრაცია: system ogr2ogr (მოსახსნელი)
+    ქმნის GPKG-ს → convert_file ისევე აგრძელებს, როგორც ჩვეულებრივ წყაროზე,
+    და გამომავალს **.dwg-ის საწყისი სახელით** ასახელებს (არა დროებითი GPKG-ის)."""
+    prepared = _make_source(str(tmp_path / "prepared.gpkg"), mixed=False)
+
+    def _fake_run(cmd, **kwargs):
+        # cmd = [ogr2ogr, "-f", "GPKG", tmp_out, dwg_src] — ვბაძავთ წარმატებულ
+        # კონვერტაციას: მოთხოვნილ დროებით გზაზე ვდებთ უკვე მზა GPKG-ს.
+        tmp_out = cmd[3]
+        import shutil
+        shutil.copyfile(prepared, tmp_out)
+
+        class _R:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return _R()
+
+    monkeypatch.setattr(g2p_core, "find_tool", lambda exe: "ogr2ogr")
+    monkeypatch.setattr(g2p_core, "_no_window", lambda: 0)
+    monkeypatch.setattr(g2p_core, "_child_env", lambda tool: {})
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    dwg = tmp_path / "Real Plan.dwg"
+    dwg.write_bytes(b"")
+    r = convert_file(str(dwg), str(tmp_path / "out"), "gpkg")
+    assert r["error"] is None
+    assert r["reason"] is None
+    assert os.path.basename(r["out_path"]) == "Real_Plan.gpkg"    # წყაროს (dwg) სახელი
+    back = gpd.read_file(r["out_path"], layer="entities")
+    assert len(back) == 2

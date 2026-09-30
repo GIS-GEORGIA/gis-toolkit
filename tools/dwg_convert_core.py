@@ -2,10 +2,25 @@
 """DWG/DXF → SHP/GPKG/GDB კონვერტერი — სუფთა ლოგიკა (GDAL/pyogrio-ით, ღია კოდით).
 
 arcpy არაა საჭირო: GDAL-ის DXF დრაივერი (ღიაა, ყოველთვის ჩართული) კითხულობს
-.dxf-ს პირდაპირ; DWG-ს სჭირდება GDAL-ის CAD დრაივერი (ODA/Teigha ბიბლიოთეკით
-აწყობილი — ჩვეულებრივ QGIS-ში/OSGeo4W-ში არის, „მარტივ“ GDAL-ის ბილდებში
-ლიცენზიის გამო ხშირად არა). თუ დრაივერი არ არსებობს, კონკრეტული DWG
-გამოტოვდება და ცხადად ჩაიწერება ლოგში — დანარჩენი ფაილები გრძელდება.
+.dxf-ს პირდაპირ. **DWG** სხვანაირად მუშაობს — ბიბლიოთეკა, რომელსაც pyogrio
+ბანდლში ატანს, DWG-ს საერთოდ ვერ კითხულობს (drivers-ში „CAD“ არც კი ჩანს),
+ამიტომ ასეთ ფაილზე ჯერ ვცდით **სისტემურ GDAL-ს** (QGIS/OSGeo4W-ის
+`ogr2ogr` — მას აქვს ღია კოდის CAD დრაივერი, `libopencad`).
+
+⚠️ **`libopencad`-ის რეალური შეზღუდვა** (გადამოწმებულია namuli DWG-ებზე):
+საიმედოდ მხოლოდ **DWG R2000 (ACAD1015)** ფორმატს კითხულობს. თანამედროვე
+AutoCAD/Civil 3D-ის DWG (R2007 და უახლესი) მისთვის მიუწვდომელია — ეს
+libopencad-ის ცნობილი შეზღუდვაა (Autodesk-ის დაშიფვრა ბოლომდე არ არის
+რევერს-ინჟინერირებული), არა ამ პროგრამის ხარვეზი. ასეთ შემთხვევაში
+`convert_file` ცხად, თარგმნად მინიშნებას აბრუნებს (`reason="dwg_old_driver"`):
+DWG → DXF გადარჩენა AutoCAD-ში (Save As), შემდეგ DXF-ის კონვერტაცია — DXF
+ყოველთვის მუშაობს. სისტემური GDAL საერთოდ რომ არ მოიძებნოს —
+`reason="dwg_no_tool"`. სხვა შეცდომისას `reason=None`, `error`-ში GDAL-ის
+ნედლი შეტყობინებაა.
+
+წარმატებისას (DWG → დროებითი GPKG სისტემური GDAL-ით → ჩვეულებრივი ნაკადი)
+შედეგი იგივეა, რაც პირდაპირ GPKG/SHP/DXF წყაროზე; დანარჩენი ფაილები
+გრძელდება წარუმატებლობის შემთხვევაშიც.
 
 **GPKG** მრავალშრიანი კონტეინერია და **შერეული გეომეტრიის ტიპსაც** იტანს ერთ
 შრეში (`GEOMETRY`, generic) — ამიტომ თითო წყარო-შრე პირდაპირ (ატრიბუტებით) ერთ
@@ -41,6 +56,60 @@ def sanitize(text):
     """ფაილის/შრის უსაფრთხო სახელი — არა-ალფანუმერული → „_“."""
     s = re.sub(r"[^0-9A-Za-z._-]+", "_", str(text or "")).strip("_")
     return s or "layer"
+
+
+class DwgReadError(RuntimeError):
+    """DWG ვერ წაიკითხა. ``reason`` — 'dwg_no_tool' | 'dwg_old_driver' | None
+    (თარგმნადი მინიშნების ასარჩევად UI-ში; None = ნედლი GDAL შეცდომა)."""
+
+    def __init__(self, message, reason=None):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _dwg_to_gpkg_via_system_gdal(path, log):
+    """DWG → დროებითი .gpkg სისტემური GDAL-ის ``ogr2ogr``-ით (QGIS/OSGeo4W).
+
+    pyogrio-ს ბანდლში ატანილ GDAL-ს DWG-ის დრაივერი საერთოდ არ აქვს; სისტემურ
+    GDAL-ს (თუ QGIS/OSGeo4W დაყენებულია) — აქვს ღია კოდის ``CAD`` დრაივერი
+    (``libopencad``), მაგრამ **მხოლოდ ძველი R2000 DWG-ის** საიმედო მხარდაჭერით
+    (გადამოწმებულია). წარმატებისას აბრუნებს დროებითი .gpkg-ის გზას (წასაშლელია
+    გამომძახებლის მიერ); წარუმატებლობისას — ``DwgReadError`` შესაბამისი
+    ``reason``-ით.
+    """
+    import subprocess
+    import tempfile
+    from tools.gdb2postgis_core import find_tool, _no_window, _child_env
+
+    tool = find_tool("ogr2ogr")
+    if not tool:
+        raise DwgReadError(
+            "System GDAL (ogr2ogr) not found — install QGIS or OSGeo4W; "
+            "its open-source CAD driver is needed to read DWG.",
+            reason="dwg_no_tool")
+
+    fd, tmp = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(tmp)                      # ogr2ogr თავად შექმნის
+    try:
+        r = subprocess.run(
+            [tool, "-f", "GPKG", tmp, path],
+            capture_output=True, text=True, timeout=120,
+            creationflags=_no_window(), env=_child_env(tool))
+        stderr = (r.stderr or "").strip()
+        if r.returncode != 0 or not os.path.exists(tmp):
+            if "libopencad" in stderr and "does not support this version" in stderr:
+                raise DwgReadError(
+                    "libopencad (open-source CAD driver) only reliably reads "
+                    "DWG R2000 — this file is a newer DWG version:\n" + stderr,
+                    reason="dwg_old_driver")
+            raise DwgReadError(stderr or "ogr2ogr failed", reason=None)
+        log("  · system GDAL CAD driver → GPKG")
+        return tmp
+    except subprocess.TimeoutExpired as e:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise DwgReadError("ogr2ogr timeout", reason=None) from e
 
 
 def _read_layers(path):
@@ -101,19 +170,48 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
     """ერთი DXF/DWG (ან ნებისმიერი GDAL-ვექტორის) კონვერტაცია ``fmt``-ში.
 
     fmt — 'shp' | 'gpkg' | 'gdb'. აბრუნებს dict-ს:
-        {source, out_path, layers: [(name, feature_count), …], error}
-    შეცდომისას (მაგ. DWG დრაივერი არ არსებობს) — ``error`` შეივსება, ``layers`` ცარიელი.
+        {source, out_path, layers: [(name, feature_count), …], error, reason}
+    შეცდომისას ``error`` შეივსება (``layers`` ცარიელი); ``reason`` — იხ.
+    ``DwgReadError`` (DWG-სთვის) ან None (სხვა შემთხვევებში/ზოგადი შეცდომა).
+    .dwg წყაროსთვის ჯერ სისტემურ GDAL-ს (QGIS/OSGeo4W) ცდილობს
+    (``_dwg_to_gpkg_via_system_gdal``) — pyogrio-ს ბანდლს DWG დრაივერი
+    საერთოდ არ აქვს.
     """
     log = log or (lambda _m: None)
-    driver, ext = FORMATS[fmt]
     base = sanitize(os.path.splitext(os.path.basename(path))[0])
     os.makedirs(out_dir, exist_ok=True)
 
-    try:
-        source_layers = _read_layers(path)
-    except Exception as e:                  # noqa: BLE001 — არარსებული დრაივერი და ა.შ.
-        return {"source": path, "out_path": None, "layers": [], "error": str(e)}
+    ext = os.path.splitext(path)[1].lower()
+    tmp_source = None
+    read_path = path
+    if ext == ".dwg":
+        try:
+            tmp_source = read_path = _dwg_to_gpkg_via_system_gdal(path, log)
+        except DwgReadError as e:
+            return {"source": path, "out_path": None, "layers": [],
+                    "error": str(e), "reason": e.reason}
 
+    try:
+        try:
+            source_layers = _read_layers(read_path)
+        except Exception as e:            # noqa: BLE001 — დრაივერი/გატეხილი ფაილი
+            return {"source": path, "out_path": None, "layers": [],
+                    "error": str(e), "reason": None}
+        return _write_converted(source_layers, base, path, out_dir, fmt,
+                                target_epsg, log)
+    finally:
+        if tmp_source is not None:
+            try:
+                os.remove(tmp_source)
+            except OSError:
+                pass
+
+
+def _write_converted(source_layers, base, source_path, out_dir, fmt,
+                     target_epsg, log):
+    """წაკითხული შრეების ჩაწერა ``fmt``-ში — ``convert_file``-ის შიდა ნაწილი
+    (გამოცალკევებული, რომ DWG → GPKG ხიდის შემდეგაც იმავე ნაკადს გაუყვეს)."""
+    driver, ext = FORMATS[fmt]
     written = []
     if fmt == "shp":
         # ერთი ფაილი = ერთი შრე/ტიპი → ცალკე საქაღალდე ამ წყაროსთვის
@@ -132,8 +230,8 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
                 sub.to_file(out_path, driver=driver, encoding="utf-8")
                 written.append((name, len(sub)))
                 log("  ✓ {}: {}".format(name, len(sub)))
-        return {"source": path, "out_path": out_root, "layers": written,
-                "error": None}
+        return {"source": source_path, "out_path": out_root, "layers": written,
+                "error": None, "reason": None}
 
     # gdb — OpenFileGDB-ს, SHP-ის მსგავსად, ერთგვაროვანი გეომეტრია სჭირდება
     # თითო შრეში (შერეულზე „Unsupported geometry type“-ს იძლევა) — იყოფა.
@@ -158,8 +256,8 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
             first = False
             written.append((name, len(sub)))
             log("  ✓ {}: {}".format(name, len(sub)))
-    return {"source": path, "out_path": out_path if written else None,
-            "layers": written, "error": None}
+    return {"source": source_path, "out_path": out_path if written else None,
+            "layers": written, "error": None, "reason": None}
 
 
 def convert_batch(files, out_dir, fmt, target_epsg=None,

@@ -36,15 +36,22 @@ DWT = {
     "heading":  {"en": "DWG/DXF → SHP/GPKG/GDB", "ka": "DWG/DXF → SHP/GPKG/GDB"},
     "desc":     {"en": "Convert one .dxf/.dwg file, or every one in a folder, "
                        "into ESRI Shapefile, GeoPackage or File Geodatabase — "
-                       "open source (GDAL), no ArcGIS needed. DXF always works; "
-                       "DWG needs GDAL's CAD driver (QGIS/OSGeo4W usually has "
-                       "it) — otherwise that file is skipped and logged.",
+                       "open source (GDAL), no ArcGIS needed. DXF always works. "
+                       "DWG needs QGIS/OSGeo4W's open-source CAD driver "
+                       "(libopencad), which only reliably reads old DWG R2000 "
+                       "files — most current AutoCAD/Civil 3D exports are newer "
+                       "and cannot be read this way. If a DWG fails, re-save it "
+                       "as DXF in AutoCAD (Save As → DXF) and convert that "
+                       "instead.",
                  "ka": "დააკონვერტირე ერთი .dxf/.dwg ფაილი, ან საქაღალდის ყველა "
                        "ასეთი, ESRI Shapefile / GeoPackage / File Geodatabase "
                        "ფორმატში — ღია კოდით (GDAL), ArcGIS არ სჭირდება. DXF "
-                       "ყოველთვის იკითხება; DWG-ს სჭირდება GDAL-ის CAD დრაივერი "
-                       "(QGIS/OSGeo4W-ს ჩვეულებრივ აქვს) — თუ არაა, ის ფაილი "
-                       "გამოტოვდება და ლოგში აისახება."},
+                       "ყოველთვის იკითხება. DWG-ს სჭირდება QGIS/OSGeo4W-ის ღია "
+                       "კოდის CAD დრაივერი (libopencad), რომელსაც საიმედოდ "
+                       "მხოლოდ ძველი DWG R2000 ფაილების წაკითხვა შეუძლია — "
+                       "თანამედროვე AutoCAD/Civil 3D-ის ექსპორტების უმეტესობა "
+                       "ამისთვის მიუწვდომელია. თუ DWG ჩავარდა, AutoCAD-ში "
+                       "გადაარჩინე DXF-ად (Save As → DXF) და ის დააკონვერტირე."},
     "source":   {"en": "Source:", "ka": "საწყისი:"},
     "pick_file": {"en": "📄 File…", "ka": "📄 ფაილი…"},
     "pick_folder": {"en": "📁 Folder…", "ka": "📁 საქაღალდე…"},
@@ -88,6 +95,33 @@ DWT = {
     "err":      {"en": "Error", "ka": "შეცდომა"},
     "dep_err":  {"en": "This tool needs geopandas + pyogrio.\n{e}",
                  "ka": "ამ ხელსაწყოს სჭირდება geopandas + pyogrio.\n{e}"},
+
+    # DWG-სპეციფიკური მინიშნებები (convert_file-ის ``reason``-ის მიხედვით)
+    "hint_old_driver": {"en": "{n} DWG file(s) could not be read — they were "
+                              "saved with a newer AutoCAD version than the "
+                              "open-source CAD driver (libopencad) supports "
+                              "(it reliably reads only old DWG R2000 files). "
+                              "This is a known limitation of the open-source "
+                              "driver, not a bug here.\n\nFix: in AutoCAD, "
+                              "Save As → DXF for those files, then convert the "
+                              "DXF instead — it always works.",
+                        "ka": "{n} DWG ფაილი ვერ წაიკითხა — ისინი შენახულია "
+                              "ღია კოდის CAD დრაივერის (libopencad) მხარდაჭერაზე "
+                              "უფრო ახალი AutoCAD-ის ვერსიით (საიმედოდ მხოლოდ "
+                              "ძველ DWG R2000-ს კითხულობს). ეს ღია კოდის "
+                              "დრაივერის ცნობილი შეზღუდვაა, არა ამ პროგრამის "
+                              "ხარვეზი.\n\nგამოსავალი: AutoCAD-ში ამ ფაილებზე "
+                              "Save As → DXF, შემდეგ DXF დააკონვერტირე — ის "
+                              "ყოველთვის მუშაობს."},
+    "hint_no_tool": {"en": "{n} DWG file(s) were skipped — no system GDAL "
+                          "(ogr2ogr) was found. DWG conversion needs QGIS or "
+                          "OSGeo4W installed (their open-source CAD driver "
+                          "reads DWG; the bundled GDAL here does not).",
+                     "ka": "{n} DWG ფაილი გამოტოვდა — სისტემური GDAL "
+                          "(ogr2ogr) ვერ მოიძებნა. DWG-ის კონვერტაციას "
+                          "სჭირდება დაყენებული QGIS ან OSGeo4W (მათი ღია "
+                          "კოდის CAD დრაივერი კითხულობს DWG-ს; ამ პროგრამის "
+                          "ჩაშენებულ GDAL-ს — არა)."},
 
     "tip_pick_file": {"en": "Pick a single .dxf/.dwg file to convert.",
                       "ka": "აირჩიე ერთი გასაკონვერტირებელი .dxf/.dwg ფაილი."},
@@ -393,4 +427,17 @@ class DwgConvertTool(ToolFrame):
                       sk=result["files_skipped"], out=result["out"])
         self.status.set(msg)
         self.app.log("— " + msg)
+
+        # DWG-სპეციფიკური მინიშნება — ერთი შეჯამებული დიალოგი, არა თითო ფაილზე
+        by_reason = {}
+        for r in result.get("results", []):
+            reason = r.get("reason")
+            if reason:
+                by_reason[reason] = by_reason.get(reason, 0) + 1
+        hints = [self.tr("hint_" + reason.split("_", 1)[1], n=n)
+                for reason, n in by_reason.items()
+                if reason in ("dwg_old_driver", "dwg_no_tool")]
+
         messagebox.showinfo("GIS_BOX", msg)
+        for hint in hints:
+            messagebox.showwarning("GIS_BOX", hint)
