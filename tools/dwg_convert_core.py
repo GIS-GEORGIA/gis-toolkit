@@ -99,9 +99,16 @@ def _ascii_safe_copy(path):
     except UnicodeEncodeError:
         pass
     import tempfile
-    ext = os.path.splitext(path)[1]
-    fd, tmp = tempfile.mkstemp(suffix=ext)
-    os.close(fd)
+    from tools.translit import transliterate       # „ფაილის სახელი“ → „failis_saxeli“
+
+    base, ext = os.path.splitext(os.path.basename(path))
+    safe_base = transliterate(base) or "file"
+    d = tempfile.gettempdir()
+    tmp = os.path.join(d, safe_base + ext)
+    n = 1
+    while os.path.exists(tmp):                      # კოლიზია — ზრდადი სუფიქსი
+        tmp = os.path.join(d, "{}_{}{}".format(safe_base, n, ext))
+        n += 1
     shutil.copyfile(path, tmp)
     return tmp, True
 
