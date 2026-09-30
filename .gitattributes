@@ -22,3 +22,7 @@
 # shapefile-ის თანმხლები ტექსტური ფაილები
 *.prj        text
 *.cpg        text
+
+# ვენდირებული ბინარები (GNU LibreDWG — tools/vendor/libredwg/)
+*.exe        binary
+*.dll        binary

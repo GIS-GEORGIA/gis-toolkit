@@ -14,6 +14,9 @@ datas = [
     ("config.example.txt", "."),
     ("map_services.txt", "."),
     ("tools/coordextract/icon.ico", "tools/coordextract"),
+    # GNU LibreDWG (vendored, GPL-3.0) — DWG → DXF კონვერტერისთვის, subprocess-ით
+    # გამოძახებული (tools/dwg_convert_core.py); იხ. tools/vendor/libredwg/README.md
+    ("tools/vendor/libredwg", "tools/vendor/libredwg"),
 ]
 binaries = []
 # ხელსაწყოები lazy-ად იტვირთება — ცხადად ჩავრთოთ ყველა submodule

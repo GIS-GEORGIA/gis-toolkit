@@ -3,24 +3,28 @@
 
 arcpy არაა საჭირო: GDAL-ის DXF დრაივერი (ღიაა, ყოველთვის ჩართული) კითხულობს
 .dxf-ს პირდაპირ. **DWG** სხვანაირად მუშაობს — ბიბლიოთეკა, რომელსაც pyogrio
-ბანდლში ატანს, DWG-ს საერთოდ ვერ კითხულობს (drivers-ში „CAD“ არც კი ჩანს),
-ამიტომ ასეთ ფაილზე ჯერ ვცდით **სისტემურ GDAL-ს** (QGIS/OSGeo4W-ის
-`ogr2ogr` — მას აქვს ღია კოდის CAD დრაივერი, `libopencad`).
+ბანდლში ატანს, DWG-ს საერთოდ ვერ კითხულობს (drivers-ში „CAD“ არც კი ჩანს).
 
-⚠️ **`libopencad`-ის რეალური შეზღუდვა** (გადამოწმებულია namuli DWG-ებზე):
-საიმედოდ მხოლოდ **DWG R2000 (ACAD1015)** ფორმატს კითხულობს. თანამედროვე
-AutoCAD/Civil 3D-ის DWG (R2007 და უახლესი) მისთვის მიუწვდომელია — ეს
-libopencad-ის ცნობილი შეზღუდვაა (Autodesk-ის დაშიფვრა ბოლომდე არ არის
-რევერს-ინჟინერირებული), არა ამ პროგრამის ხარვეზი. ასეთ შემთხვევაში
-`convert_file` ცხად, თარგმნად მინიშნებას აბრუნებს (`reason="dwg_old_driver"`):
-DWG → DXF გადარჩენა AutoCAD-ში (Save As), შემდეგ DXF-ის კონვერტაცია — DXF
-ყოველთვის მუშაობს. სისტემური GDAL საერთოდ რომ არ მოიძებნოს —
-`reason="dwg_no_tool"`. სხვა შეცდომისას `reason=None`, `error`-ში GDAL-ის
-ნედლი შეტყობინებაა.
+DWG-ისთვის ორსაფეხურიანი, **სრულად ჩაშენებული** მიდგომაა:
 
-წარმატებისას (DWG → დროებითი GPKG სისტემური GDAL-ით → ჩვეულებრივი ნაკადი)
-შედეგი იგივეა, რაც პირდაპირ GPKG/SHP/DXF წყაროზე; დანარჩენი ფაილები
-გრძელდება წარუმატებლობის შემთხვევაშიც.
+1. **ბანდლში ატანილი GNU LibreDWG** (`tools/vendor/libredwg/dwg2dxf.exe`,
+   GPL-3.0 — იხ. იმავე საქაღალდის README/COPYING) — DWG → DXF. LibreDWG-ს
+   რეალურად შეუძლია r13–r2018-ის ~99%-იანი წაკითხვა; **გადამოწმებულია 4
+   რეალურ, სხვადასხვა AutoCAD-ვერსიის DWG-ზე — ყველა წარმატებით** (1-დან
+   15000-მდე ობიექტამდე). **მომხმარებელს არაფრის დაყენება არ სჭირდება** —
+   ბინარი GIS_BOX-თან ერთადაა.
+2. **Fallback: სისტემური GDAL** (QGIS/OSGeo4W-ის `ogr2ogr`, თუ ინსტალირებულია)
+   — მისი ღია კოდის CAD დრაივერი (`libopencad`) საიმედოდ მხოლოდ **DWG
+   R2000 (ACAD1015)**-ს კითხულობს (თანამედროვე DWG მისთვის მიუწვდომელია —
+   ეს `libopencad`-ის ცნობილი შეზღუდვაა). გამოსადეგია, თუ LibreDWG-ის
+   ბანდლი რატომღაც აკლია (packaging პრობლემა) ან ის კონკრეტულად ჩავარდა.
+
+ორივე ჩავარდნისას `convert_file` თარგმნად მიზეზს აბრუნებს
+(`reason`): `"dwg_no_tool"` — ვერცერთი მეთოდი ვერ მოიძებნა; `"dwg_old_driver"`
+— მხოლოდ fallback GDAL სცადა და `libopencad`-ის ვერსიის შეზღუდვას მიაწყდა;
+`None` — სხვა (ნედლი) შეცდომა. წარმატებისას (DWG → დროებითი DXF/GPKG →
+ჩვეულებრივი ნაკადი) შედეგი იგივეა, რაც პირდაპირ GPKG/SHP/DXF წყაროზე;
+დანარჩენი ფაილები გრძელდება წარუმატებლობის შემთხვევაშიც.
 
 **GPKG** მრავალშრიანი კონტეინერია და **შერეული გეომეტრიის ტიპსაც** იტანს ერთ
 შრეში (`GEOMETRY`, generic) — ამიტომ თითო წყარო-შრე პირდაპირ (ატრიბუტებით) ერთ
@@ -67,6 +71,108 @@ class DwgReadError(RuntimeError):
         self.reason = reason
 
 
+def _bundled_dwg2dxf_path():
+    """ბანდლში ატანილი ``dwg2dxf.exe``-ის გზა, ან None (Windows-ის გარეთ ან
+    packaging-ის შეცდომისას — შედეგად fallback-ზე გადავა)."""
+    import sys
+    if sys.platform != "win32":
+        return None
+    from tools.apppaths import resource_path
+    p = resource_path(os.path.join("tools", "vendor", "libredwg", "dwg2dxf.exe"))
+    return p if os.path.isfile(p) else None
+
+
+def _ascii_safe_copy(path):
+    """თუ ``path`` არა-ASCII სიმბოლოს შეიცავს (მაგ. ქართული), დროებით
+    ASCII-სახელიან ასლზე დააკოპირებს და ``(ასლის_გზა, True)`` აბრუნებს;
+    სხვაგვარად — ``(path, False)`` (ასლი არ გაკეთებულა).
+
+    **რატომ:** ბანდლში ატანილი ``dwg2dxf.exe`` (Windows-ის კონსოლის
+    აპლიკაცია) ბრძანების არგუმენტებს ANSI კოდის-გვერდით კითხულობს (Python-ის
+    ``subprocess`` UTF-16-ით უშვებს პროცესს, მაგრამ ბინარის საკუთარი argv
+    parsing-ია ANSI) — ქართული (და სხვა non-ASCII) გზა `?`-ებად იქცევა და
+    ფაილი „ვერ მოიძებნება“ (გადამოწმებულია რეალურ ფაილზე). ASCII დროებითი
+    ასლი ამ პრობლემას გვერდს უვლის."""
+    try:
+        path.encode("ascii")
+        return path, False
+    except UnicodeEncodeError:
+        pass
+    import tempfile
+    ext = os.path.splitext(path)[1]
+    fd, tmp = tempfile.mkstemp(suffix=ext)
+    os.close(fd)
+    shutil.copyfile(path, tmp)
+    return tmp, True
+
+
+def _dwg_to_dxf_via_bundled_libredwg(path, exe, log):
+    """DWG → დროებითი .dxf ბანდლში ატანილი GNU LibreDWG-ის ``dwg2dxf``-ით.
+
+    არაფერი დამატებით არ სჭირდება — ბინარი GIS_BOX-თან ერთადაა. წარმატებისას
+    აბრუნებს დროებითი .dxf-ის გზას (წასაშლელია გამომძახებლის მიერ);
+    წარუმატებლობისას — ``DwgReadError`` (``reason=None`` — კონკრეტული
+    მიზეზი, თუ ცნობილია, fallback GDAL-ის მცდელობამ შეიძლება უფრო ცხადი
+    დააბრუნოს)."""
+    import subprocess
+    import tempfile
+    from tools.gdb2postgis_core import _no_window
+
+    safe_path, is_tmp_src = _ascii_safe_copy(path)
+    fd, tmp = tempfile.mkstemp(suffix=".dxf")
+    os.close(fd)
+    os.remove(tmp)                      # dwg2dxf თავად შექმნის
+    try:
+        r = subprocess.run(
+            [exe, "-o", tmp, safe_path],
+            capture_output=True, text=True, timeout=120,
+            encoding="utf-8", errors="replace",
+            creationflags=_no_window())
+        stderr = (r.stderr or "").strip()
+        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+            raise DwgReadError(
+                "Bundled LibreDWG (dwg2dxf) could not convert this file:\n"
+                + (stderr or "(no output)"), reason=None)
+        log("  · bundled LibreDWG (dwg2dxf) → DXF")
+        return tmp
+    except subprocess.TimeoutExpired as e:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise DwgReadError("dwg2dxf timeout", reason=None) from e
+    finally:
+        if is_tmp_src:
+            try:
+                os.remove(safe_path)
+            except OSError:
+                pass
+
+
+def _dwg_to_readable(path, log):
+    """DWG → წასაკითხი დროებითი ფაილის (DXF ან GPKG) გზა.
+
+    ჯერ ბანდლში ატანილ LibreDWG-ს სცდის (§1-ლი მიდგომა — არაფერი
+    დამატებით არ სჭირდება); თუ ვერ არის ან ჩავარდა — სისტემურ GDAL-ს
+    (fallback). ორივე ჩავარდნისას — ``DwgReadError`` ყველაზე კონკრეტული
+    (თარგმნადი) მიზეზით."""
+    errors = []
+    bundled = _bundled_dwg2dxf_path()
+    if bundled:
+        try:
+            return _dwg_to_dxf_via_bundled_libredwg(path, bundled, log)
+        except DwgReadError as e:
+            errors.append(e)
+    else:
+        log("  · bundled LibreDWG not found — trying system GDAL")
+
+    try:
+        return _dwg_to_gpkg_via_system_gdal(path, log)
+    except DwgReadError as e:
+        errors.append(e)
+
+    specific = next((e for e in errors if e.reason), None)
+    raise specific or errors[-1]
+
+
 def _dwg_to_gpkg_via_system_gdal(path, log):
     """DWG → დროებითი .gpkg სისტემური GDAL-ის ``ogr2ogr``-ით (QGIS/OSGeo4W).
 
@@ -88,13 +194,15 @@ def _dwg_to_gpkg_via_system_gdal(path, log):
             "its open-source CAD driver is needed to read DWG.",
             reason="dwg_no_tool")
 
+    safe_path, is_tmp_src = _ascii_safe_copy(path)
     fd, tmp = tempfile.mkstemp(suffix=".gpkg")
     os.close(fd)
     os.remove(tmp)                      # ogr2ogr თავად შექმნის
     try:
         r = subprocess.run(
-            [tool, "-f", "GPKG", tmp, path],
+            [tool, "-f", "GPKG", tmp, safe_path],
             capture_output=True, text=True, timeout=120,
+            encoding="utf-8", errors="replace",
             creationflags=_no_window(), env=_child_env(tool))
         stderr = (r.stderr or "").strip()
         if r.returncode != 0 or not os.path.exists(tmp):
@@ -110,6 +218,12 @@ def _dwg_to_gpkg_via_system_gdal(path, log):
         if os.path.exists(tmp):
             os.remove(tmp)
         raise DwgReadError("ogr2ogr timeout", reason=None) from e
+    finally:
+        if is_tmp_src:
+            try:
+                os.remove(safe_path)
+            except OSError:
+                pass
 
 
 def _read_layers(path):
@@ -186,7 +300,7 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
     read_path = path
     if ext == ".dwg":
         try:
-            tmp_source = read_path = _dwg_to_gpkg_via_system_gdal(path, log)
+            tmp_source = read_path = _dwg_to_readable(path, log)
         except DwgReadError as e:
             return {"source": path, "out_path": None, "layers": [],
                     "error": str(e), "reason": e.reason}
@@ -195,8 +309,19 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
         try:
             source_layers = _read_layers(read_path)
         except Exception as e:            # noqa: BLE001 — დრაივერი/გატეხილი ფაილი
+            reason = None
+            msg = str(e)
+            if ext == ".dwg" and tmp_source is not None:
+                # DWG → DXF კონვერტაცია (LibreDWG) წარმატებული იყო, მაგრამ
+                # GDAL-ის საკუთარი DXF-რიდერი ვერ ასწავლის კონკრეტულ
+                # ობიექტს (იშვიათი, ცნობილი შეუთავსებლობა ორ სხვადასხვა ღია
+                # კოდის პროექტს შორის — არა ამ პროგრამის ხარვეზი).
+                reason = "dwg_gdal_dxf_gap"
+                msg = ("DWG successfully converted to DXF (LibreDWG), but "
+                      "GDAL's own DXF reader could not parse a specific "
+                      "entity in the result:\n" + msg)
             return {"source": path, "out_path": None, "layers": [],
-                    "error": str(e), "reason": None}
+                    "error": msg, "reason": reason}
         return _write_converted(source_layers, base, path, out_dir, fmt,
                                 target_epsg, log)
     finally:

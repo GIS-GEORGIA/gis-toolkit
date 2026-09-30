@@ -113,15 +113,31 @@ DWT = {
                               "ხარვეზი.\n\nგამოსავალი: AutoCAD-ში ამ ფაილებზე "
                               "Save As → DXF, შემდეგ DXF დააკონვერტირე — ის "
                               "ყოველთვის მუშაობს."},
-    "hint_no_tool": {"en": "{n} DWG file(s) were skipped — no system GDAL "
-                          "(ogr2ogr) was found. DWG conversion needs QGIS or "
-                          "OSGeo4W installed (their open-source CAD driver "
-                          "reads DWG; the bundled GDAL here does not).",
-                     "ka": "{n} DWG ფაილი გამოტოვდა — სისტემური GDAL "
-                          "(ogr2ogr) ვერ მოიძებნა. DWG-ის კონვერტაციას "
-                          "სჭირდება დაყენებული QGIS ან OSGeo4W (მათი ღია "
-                          "კოდის CAD დრაივერი კითხულობს DWG-ს; ამ პროგრამის "
-                          "ჩაშენებულ GDAL-ს — არა)."},
+    "hint_no_tool": {"en": "{n} DWG file(s) were skipped — no DWG reader is "
+                          "available at all (neither the bundled LibreDWG "
+                          "nor a system GDAL/QGIS install was found). This "
+                          "usually means a packaging problem; installing "
+                          "QGIS or OSGeo4W also fixes it.",
+                     "ka": "{n} DWG ფაილი გამოტოვდა — DWG-ის წამკითხველი "
+                          "საერთოდ ვერ მოიძებნა (არც ჩაშენებული LibreDWG და "
+                          "არც სისტემური GDAL/QGIS). ეს ჩვეულებრივ packaging-"
+                          "ის პრობლემას ნიშნავს; QGIS-ის ან OSGeo4W-ის "
+                          "დაყენებაც აგვარებს."},
+    "hint_gdal_dxf_gap": {"en": "{n} DWG file(s) converted successfully to "
+                              "DXF, but GDAL's own DXF reader could not parse "
+                              "a specific entity in the result (a rare "
+                              "interoperability gap between two different "
+                              "open-source projects — the DWG itself was read "
+                              "fine). Try converting to a different output "
+                              "format, or open the DWG in AutoCAD/QGIS and "
+                              "re-save it there.",
+                         "ka": "{n} DWG ფაილი წარმატებით დაკონვერტირდა "
+                              "DXF-ად, მაგრამ GDAL-ის საკუთარმა DXF-რიდერმა "
+                              "ვერ ამოიცნო შედეგში კონკრეტული ობიექტი (იშვიათი "
+                              "შეუთავსებლობა ორ სხვადასხვა ღია კოდის პროექტს "
+                              "შორის — თავად DWG კარგად წაიკითხა). სცადე სხვა "
+                              "გამომავალი ფორმატი, ან DWG გახსენი AutoCAD/"
+                              "QGIS-ში და იქ ხელახლა შეინახე."},
 
     "tip_pick_file": {"en": "Pick a single .dxf/.dwg file to convert.",
                       "ka": "აირჩიე ერთი გასაკონვერტირებელი .dxf/.dwg ფაილი."},
@@ -436,7 +452,7 @@ class DwgConvertTool(ToolFrame):
                 by_reason[reason] = by_reason.get(reason, 0) + 1
         hints = [self.tr("hint_" + reason.split("_", 1)[1], n=n)
                 for reason, n in by_reason.items()
-                if reason in ("dwg_old_driver", "dwg_no_tool")]
+                if reason in ("dwg_old_driver", "dwg_no_tool", "dwg_gdal_dxf_gap")]
 
         messagebox.showinfo("GIS_BOX", msg)
         for hint in hints:
