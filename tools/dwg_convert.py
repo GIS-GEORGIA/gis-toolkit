@@ -36,22 +36,23 @@ DWT = {
     "heading":  {"en": "DWG/DXF → SHP/GPKG/GDB", "ka": "DWG/DXF → SHP/GPKG/GDB"},
     "desc":     {"en": "Convert one .dxf/.dwg file, or every one in a folder, "
                        "into ESRI Shapefile, GeoPackage or File Geodatabase — "
-                       "open source (GDAL), no ArcGIS needed. DXF always works. "
-                       "DWG needs QGIS/OSGeo4W's open-source CAD driver "
-                       "(libopencad), which only reliably reads old DWG R2000 "
-                       "files — most current AutoCAD/Civil 3D exports are newer "
-                       "and cannot be read this way. If a DWG fails, re-save it "
-                       "as DXF in AutoCAD (Save As → DXF) and convert that "
-                       "instead.",
+                       "open source, no ArcGIS or AutoCAD needed, nothing extra "
+                       "to install. DXF always works. DWG is read by GNU "
+                       "LibreDWG, bundled with this app (GPL-3.0) — it reliably "
+                       "handles modern DWG (r13–r2018), unlike QGIS's own CAD "
+                       "driver which only supports old DWG R2000. If a DWG "
+                       "still fails, the log explains why (a specific known "
+                       "limitation, not a bug here).",
                  "ka": "დააკონვერტირე ერთი .dxf/.dwg ფაილი, ან საქაღალდის ყველა "
                        "ასეთი, ESRI Shapefile / GeoPackage / File Geodatabase "
-                       "ფორმატში — ღია კოდით (GDAL), ArcGIS არ სჭირდება. DXF "
-                       "ყოველთვის იკითხება. DWG-ს სჭირდება QGIS/OSGeo4W-ის ღია "
-                       "კოდის CAD დრაივერი (libopencad), რომელსაც საიმედოდ "
-                       "მხოლოდ ძველი DWG R2000 ფაილების წაკითხვა შეუძლია — "
-                       "თანამედროვე AutoCAD/Civil 3D-ის ექსპორტების უმეტესობა "
-                       "ამისთვის მიუწვდომელია. თუ DWG ჩავარდა, AutoCAD-ში "
-                       "გადაარჩინე DXF-ად (Save As → DXF) და ის დააკონვერტირე."},
+                       "ფორმატში — ღია კოდით, ArcGIS ან AutoCAD არ სჭირდება, "
+                       "არაფრის დამატებით დაყენება. DXF ყოველთვის იკითხება. "
+                       "DWG-ს კითხულობს GNU LibreDWG, ჩაშენებული ამ პროგრამაში "
+                       "(GPL-3.0) — საიმედოდ ამუშავებს თანამედროვე DWG-საც "
+                       "(r13–r2018), განსხვავებით QGIS-ის საკუთარი CAD "
+                       "დრაივერისგან, რომელსაც მხოლოდ ძველი DWG R2000 შეუძლია. "
+                       "თუ მაინც ჩავარდა, ლოგში ახსნილია რატომ (კონკრეტული "
+                       "ცნობილი შეზღუდვა, არა ამ პროგრამის ხარვეზი)."},
     "source":   {"en": "Source:", "ka": "საწყისი:"},
     "pick_file": {"en": "📄 File…", "ka": "📄 ფაილი…"},
     "pick_folder": {"en": "📁 Folder…", "ka": "📁 საქაღალდე…"},
