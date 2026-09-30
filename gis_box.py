@@ -108,6 +108,7 @@ TR = {
     "shpcoord_name":{"en": "Shp → coordinates",     "ka": "Shp → კოორდინატები"},
     "gdb2pg_name":  {"en": "GDB → PostGIS",         "ka": "GDB → PostGIS"},
     "geomcol_name": {"en": "Geometry → GeoPackage",  "ka": "გეომეტრიების შეგროვება"},
+    "dwgconv_name": {"en": "DWG/DXF → SHP/GPKG/GDB", "ka": "DWG/DXF → SHP/GPKG/GDB"},
     "zoneint_name": {"en": "Zone intersection",     "ka": "დაცვის ზონის კვეთა"},
     "lineint_name": {"en": "Line crossings",        "ka": "ხაზების გადაკვეთა"},
     "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
@@ -474,6 +475,11 @@ class GisBoxApp(tk.Tk):
             "factory": self._make_geomcol_tool,
         })
         specs.append({
+            "name_en": TR["dwgconv_name"]["en"], "name_ka": TR["dwgconv_name"]["ka"],
+            "tid": "dwg_convert",
+            "factory": self._make_dwgconv_tool,
+        })
+        specs.append({
             "name_en": TR["map_name"]["en"], "name_ka": TR["map_name"]["ka"],
             "factory": self._make_map_tool,
         })
@@ -518,6 +524,10 @@ class GisBoxApp(tk.Tk):
     def _make_geomcol_tool(self, master):
         from tools.geom_collect import GeomCollectTool
         return GeomCollectTool(master, self)
+
+    def _make_dwgconv_tool(self, master):
+        from tools.dwg_convert import DwgConvertTool
+        return DwgConvertTool(master, self)
 
     def _make_zoneint_tool(self, master):
         from tools.zone_intersect import ZoneIntersectTool
