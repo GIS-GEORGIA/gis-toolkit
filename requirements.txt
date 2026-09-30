@@ -12,6 +12,12 @@ pyogrio>=0.9
 pandas>=2.0
 openpyxl>=3.1
 
+# --- DWG/DXF → SHP/GPKG/GDB (dwg_convert): ezdxf ერჩევს GDAL-ის DXF-რიდერს ---
+# შემთხვევებში, როცა GDAL კონკრეტულ ობიექტს (მაგ. SPLINE/HATCH ვარიანტი) ვერ
+# კითხულობს — LibreDWG-ის GPL ბინარი (tools/vendor/libredwg/) ცალკეა, pip-ს
+# არ სჭირდება.
+ezdxf>=1.4
+
 # --- კოორდინატების ამომღები / coordinate extractor ---
 numpy>=1.23
 opencv-python>=4.6

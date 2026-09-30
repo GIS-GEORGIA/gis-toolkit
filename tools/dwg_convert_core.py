@@ -26,6 +26,17 @@ DWG-ისთვის ორსაფეხურიანი, **სრულ�
 ჩვეულებრივი ნაკადი) შედეგი იგივეა, რაც პირდაპირ GPKG/SHP/DXF წყაროზე;
 დანარჩენი ფაილები გრძელდება წარუმატებლობის შემთხვევაშიც.
 
+**DXF-ის წაკითხვის rescue** (`_read_dxf_via_ezdxf`): DWG → DXF ეტაპი შეიძლება
+წარმატებული იყოს, მაგრამ **GDAL-ის საკუთარი DXF-რიდერი** ვარდება კონკრეტულ
+ობიექტზე (გადამოწმებულია: რთულ, რეალურ DWG-ზე — 2935 ობიექტიდან GDAL
+საერთოდ ვერ წაიკითხავდა). ასეთ შემთხვევაში სცდება **`ezdxf`**-ი (სუფთა
+Python, MIT) — ის ცალკე ერთეულებს კითხულობს `ezdxf.addons.geo`-თი, ბლოკის
+მითითებებს (`INSERT`) რეკურსიულად შლის რეალურ გეომეტრიამდე
+(`virtual_entities()`), წმინდა ანოტაციებს (ტექსტი, განზომილებები) კი
+გამოტოვებს — იმავე ფაილზე 2580/2935 (88%) აღდგა. ამ rescue-ის შემდეგაც
+ჩავარდნისას — `reason="dwg_gdal_dxf_gap"` (ორივე DXF-რიდერი ჩავარდა, თავად
+DWG კი კარგად წაიკითხა).
+
 **GPKG** მრავალშრიანი კონტეინერია და **შერეული გეომეტრიის ტიპსაც** იტანს ერთ
 შრეში (`GEOMETRY`, generic) — ამიტომ თითო წყარო-შრე პირდაპირ (ატრიბუტებით) ერთ
 გამომავალ შრედ გადადის. **SHP და OpenFileGDB** კი ერთ შრეში მხოლოდ ერთგვაროვან
@@ -57,8 +68,12 @@ FORMATS = {
 
 
 def sanitize(text):
-    """ფაილის/შრის უსაფრთხო სახელი — არა-ალფანუმერული → „_“."""
-    s = re.sub(r"[^0-9A-Za-z._-]+", "_", str(text or "")).strip("_")
+    """ფაილის/შრის უსაფრთხო სახელი — ქართული ლათინურდება (readable), დანარჩენი
+    არა-ალფანუმერული → „_“. სუფთა ქართული სახელი აღარ იკარგება „layer"-ში
+    (მაგ. „გეგმა (…)" → „gegma_…", არა ბუნდოვანი fallback)."""
+    from tools.translit import transliterate
+    s = transliterate(str(text or ""))
+    s = re.sub(r"[^0-9A-Za-z._-]+", "_", s).strip("_")
     return s or "layer"
 
 
@@ -244,6 +259,65 @@ def _read_layers(path):
     return out
 
 
+def _dxf_entity_geoms(e, _depth=0):
+    """DXF ერთეულიდან (shapely) გეომეტრიების გენერატორი (0, 1 ან მეტი).
+
+    ჩვეულებრივი ერთეულები (LINE/LWPOLYLINE/HATCH/CIRCLE/…) პირდაპირ
+    გარდაიქმნება ``ezdxf.addons.geo``-თი. ``INSERT`` (ბლოკის მითითება) არ
+    არის თავად გეომეტრია — მისი რეალური შემცველობა ტრანსფორმირებული
+    ქვე-ერთეულებია (``virtual_entities()``), ამიტომ რეკურსიულად იშლება.
+    წმინდა ანოტაციები (TEXT/MTEXT/DIMENSION/LEADER…) და ამოუცნობი proxy
+    ობიექტები გეომეტრიას არ შეიცავს — გამოტოვდება (ისევე, როგორც GDAL-ის
+    DXF დრაივერსაც არ გააქვს ისინი ცალკე geometry-სახით)."""
+    from ezdxf.addons import geo
+    try:
+        yield geo.proxy(e).__geo_interface__
+        return
+    except Exception:                       # noqa: BLE001
+        pass
+    if e.dxftype() == "INSERT" and _depth < 4:    # ციკლური ბლოკებისგან დაცვა
+        try:
+            subs = list(e.virtual_entities())
+        except Exception:                    # noqa: BLE001
+            return
+        for sub in subs:
+            yield from _dxf_entity_geoms(sub, _depth + 1)
+
+
+def _read_dxf_via_ezdxf(path, log):
+    """DXF-ის წაკითხვა სუფთა Python-ის ``ezdxf``-ით (MIT) — rescue-გზა
+    შემთხვევებისთვის, როცა GDAL-ის საკუთარი DXF-რიდერი კონკრეტულ ობიექტზე
+    (მაგ. გარკვეული SPLINE/HATCH ვარიანტი) ვარდება, თუმცა DXF თავად
+    ვალიდურია. ბლოკის მითითებები (``INSERT``) იშლება რეალურ გეომეტრიამდე;
+    ანოტაციები (ტექსტი, განზომილებები) — არ არის „გეომეტრია“, გამოტოვდება
+    (GDAL-ის DXF დრაივერიც ასე იქცევა).
+
+    აბრუნებს ერთშრიან GeoDataFrame-ს (სვეტები: ``Layer``, ``EntityType``);
+    ცარიელზე/მთლიან ჩავარდნაზე — ``RuntimeError``."""
+    import ezdxf
+    import geopandas as gpd
+    from shapely.geometry import shape
+
+    doc = ezdxf.readfile(path)
+    rows = []
+    for e in doc.modelspace():
+        layer = getattr(e.dxf, "layer", "0")
+        etype = e.dxftype()
+        for mapping in _dxf_entity_geoms(e):
+            try:
+                geom = shape(mapping)
+            except Exception:                # noqa: BLE001
+                continue
+            if geom is not None and not geom.is_empty:
+                rows.append({"Layer": layer, "EntityType": etype,
+                            "geometry": geom})
+    if not rows:
+        raise RuntimeError("ezdxf found no convertible geometry in this DXF")
+    log("  · ezdxf (pure-Python DXF reader) rescued {} geometries".format(
+        len(rows)))
+    return gpd.GeoDataFrame(rows, geometry="geometry", crs=None)
+
+
 def _normalize_crs(gdf, target_epsg):
     if not target_epsg:
         return gdf
@@ -316,19 +390,33 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
         try:
             source_layers = _read_layers(read_path)
         except Exception as e:            # noqa: BLE001 — დრაივერი/გატეხილი ფაილი
-            reason = None
-            msg = str(e)
-            if ext == ".dwg" and tmp_source is not None:
-                # DWG → DXF კონვერტაცია (LibreDWG) წარმატებული იყო, მაგრამ
-                # GDAL-ის საკუთარი DXF-რიდერი ვერ ასწავლის კონკრეტულ
-                # ობიექტს (იშვიათი, ცნობილი შეუთავსებლობა ორ სხვადასხვა ღია
-                # კოდის პროექტს შორის — არა ამ პროგრამის ხარვეზი).
-                reason = "dwg_gdal_dxf_gap"
-                msg = ("DWG successfully converted to DXF (LibreDWG), but "
-                      "GDAL's own DXF reader could not parse a specific "
-                      "entity in the result:\n" + msg)
-            return {"source": path, "out_path": None, "layers": [],
-                    "error": msg, "reason": reason}
+            gdal_err = str(e)
+            # rescue: GDAL-ის DXF-რიდერმა ვერ შეძლო, მაგრამ ezdxf (სუფთა
+            # Python, MIT) ხშირად წაიკითხავს იმავე, ვალიდურ DXF-ს —
+            # გადამოწმებულია რეალურ ფაილზე (GDAL-ს ვარდებოდა, ezdxf-მა
+            # ობიექტების 88% აღადგინა, ბლოკების გახსნის ჩათვლით).
+            if read_path.lower().endswith(".dxf"):
+                try:
+                    gdf = _read_dxf_via_ezdxf(read_path, log)
+                    source_layers = [("entities", gdf)]
+                except Exception as e2:      # noqa: BLE001 — ezdxf-იც ჩავარდა
+                    reason = None
+                    msg = "{}\n\n(ezdxf rescue also failed: {})".format(
+                        gdal_err, e2)
+                    if ext == ".dwg" and tmp_source is not None:
+                        # DWG → DXF (LibreDWG) წარმატებული იყო, მაგრამ
+                        # ვერც GDAL-მა, ვერც ezdxf-მა წაიკითხა შედეგი —
+                        # იშვიათი, ღრმა შეუთავსებლობა (არა ამ პროგრამის
+                        # ხარვეზი).
+                        reason = "dwg_gdal_dxf_gap"
+                        msg = ("DWG successfully converted to DXF "
+                              "(LibreDWG), but neither GDAL's nor ezdxf's "
+                              "DXF reader could parse the result:\n" + msg)
+                    return {"source": path, "out_path": None, "layers": [],
+                            "error": msg, "reason": reason}
+            else:
+                return {"source": path, "out_path": None, "layers": [],
+                        "error": gdal_err, "reason": None}
         return _write_converted(source_layers, base, path, out_dir, fmt,
                                 target_epsg, log)
     finally:

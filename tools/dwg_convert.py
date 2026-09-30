@@ -36,23 +36,27 @@ DWT = {
     "heading":  {"en": "DWG/DXF → SHP/GPKG/GDB", "ka": "DWG/DXF → SHP/GPKG/GDB"},
     "desc":     {"en": "Convert one .dxf/.dwg file, or every one in a folder, "
                        "into ESRI Shapefile, GeoPackage or File Geodatabase — "
-                       "open source, no ArcGIS or AutoCAD needed, nothing extra "
-                       "to install. DXF always works. DWG is read by GNU "
+                       "open source, no ArcGIS, AutoCAD or QGIS needed, nothing "
+                       "extra to install. DXF always works. DWG is read by GNU "
                        "LibreDWG, bundled with this app (GPL-3.0) — it reliably "
                        "handles modern DWG (r13–r2018), unlike QGIS's own CAD "
-                       "driver which only supports old DWG R2000. If a DWG "
-                       "still fails, the log explains why (a specific known "
-                       "limitation, not a bug here).",
+                       "driver which only supports old DWG R2000. If GDAL's DXF "
+                       "reader trips on a specific entity in the result, ezdxf "
+                       "(pure Python, bundled) rescues it automatically. If a "
+                       "file still fails, the log explains the specific known "
+                       "limitation — not a bug here.",
                  "ka": "დააკონვერტირე ერთი .dxf/.dwg ფაილი, ან საქაღალდის ყველა "
                        "ასეთი, ESRI Shapefile / GeoPackage / File Geodatabase "
-                       "ფორმატში — ღია კოდით, ArcGIS ან AutoCAD არ სჭირდება, "
-                       "არაფრის დამატებით დაყენება. DXF ყოველთვის იკითხება. "
-                       "DWG-ს კითხულობს GNU LibreDWG, ჩაშენებული ამ პროგრამაში "
-                       "(GPL-3.0) — საიმედოდ ამუშავებს თანამედროვე DWG-საც "
-                       "(r13–r2018), განსხვავებით QGIS-ის საკუთარი CAD "
+                       "ფორმატში — ღია კოდით, ArcGIS, AutoCAD ან QGIS არ "
+                       "სჭირდება, არაფრის დამატებით დაყენება. DXF ყოველთვის "
+                       "იკითხება. DWG-ს კითხულობს GNU LibreDWG, ჩაშენებული ამ "
+                       "პროგრამაში (GPL-3.0) — საიმედოდ ამუშავებს თანამედროვე "
+                       "DWG-საც (r13–r2018), განსხვავებით QGIS-ის საკუთარი CAD "
                        "დრაივერისგან, რომელსაც მხოლოდ ძველი DWG R2000 შეუძლია. "
-                       "თუ მაინც ჩავარდა, ლოგში ახსნილია რატომ (კონკრეტული "
-                       "ცნობილი შეზღუდვა, არა ამ პროგრამის ხარვეზი)."},
+                       "თუ GDAL-ის DXF-რიდერი კონკრეტულ ობიექტზე ჩავარდება, "
+                       "ezdxf (სუფთა Python, ჩაშენებული) ავტომატურად აღადგენს. "
+                       "თუ ფაილი მაინც ჩავარდა, ლოგში ახსნილია კონკრეტული "
+                       "ცნობილი შეზღუდვა — არა ამ პროგრამის ხარვეზი."},
     "source":   {"en": "Source:", "ka": "საწყისი:"},
     "pick_file": {"en": "📄 File…", "ka": "📄 ფაილი…"},
     "pick_folder": {"en": "📁 Folder…", "ka": "📁 საქაღალდე…"},
@@ -125,20 +129,23 @@ DWT = {
                           "ის პრობლემას ნიშნავს; QGIS-ის ან OSGeo4W-ის "
                           "დაყენებაც აგვარებს."},
     "hint_gdal_dxf_gap": {"en": "{n} DWG file(s) converted successfully to "
-                              "DXF, but GDAL's own DXF reader could not parse "
-                              "a specific entity in the result (a rare "
-                              "interoperability gap between two different "
-                              "open-source projects — the DWG itself was read "
-                              "fine). Try converting to a different output "
-                              "format, or open the DWG in AutoCAD/QGIS and "
-                              "re-save it there.",
+                              "DXF, but neither GDAL's DXF reader nor its "
+                              "ezdxf fallback could parse a specific entity "
+                              "in the result — a rare double gap between "
+                              "three different open-source DXF "
+                              "implementations (the DWG itself was read "
+                              "fine). Try a different output format, or open "
+                              "the DWG in AutoCAD and re-save it as DXF "
+                              "there.",
                          "ka": "{n} DWG ფაილი წარმატებით დაკონვერტირდა "
-                              "DXF-ად, მაგრამ GDAL-ის საკუთარმა DXF-რიდერმა "
-                              "ვერ ამოიცნო შედეგში კონკრეტული ობიექტი (იშვიათი "
-                              "შეუთავსებლობა ორ სხვადასხვა ღია კოდის პროექტს "
-                              "შორის — თავად DWG კარგად წაიკითხა). სცადე სხვა "
-                              "გამომავალი ფორმატი, ან DWG გახსენი AutoCAD/"
-                              "QGIS-ში და იქ ხელახლა შეინახე."},
+                              "DXF-ად, მაგრამ ვერც GDAL-ის DXF-რიდერმა, ვერც "
+                              "მისმა ezdxf fallback-მა ვერ ამოიცნო შედეგში "
+                              "კონკრეტული ობიექტი — იშვიათი, ორმაგი "
+                              "შეუთავსებლობა სამ სხვადასხვა ღია კოდის DXF "
+                              "იმპლემენტაციას შორის (თავად DWG კარგად "
+                              "წაიკითხა). სცადე სხვა გამომავალი ფორმატი, ან "
+                              "DWG გახსენი AutoCAD-ში და იქ DXF-ად ხელახლა "
+                              "შეინახე."},
 
     "tip_pick_file": {"en": "Pick a single .dxf/.dwg file to convert.",
                       "ka": "აირჩიე ერთი გასაკონვერტირებელი .dxf/.dwg ფაილი."},
