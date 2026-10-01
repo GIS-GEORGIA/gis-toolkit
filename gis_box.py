@@ -115,7 +115,7 @@ TR = {
     "geomcol_name": {"en": "Geometry → GeoPackage",  "ka": "გეომეტრიების შეგროვება"},
     "dwgconv_name": {"en": "DWG/DXF → SHP/GPKG/GDB", "ka": "DWG/DXF → SHP/GPKG/GDB"},
     "zoneint_name": {"en": "Zone intersection",     "ka": "დაცვის ზონის კვეთა"},
-    "lineint_name": {"en": "Line crossings",        "ka": "ხაზების გადაკვეთა"},
+    "lineint_name": {"en": "Crossing & templates",  "ka": "კვეთა და შაბლონი"},
     "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
@@ -357,24 +357,14 @@ class TemplateCopier(ToolFrame):
             f"{self.t('done')}.\n{self.t('res_copied')}: {', '.join(created)}\n\n{dest}")
 
 
-# ---- შაბლონების ნაკრებები / template sets (აქ დაამატე ახლები) -------------
-# ახალი შაბლონისთვის უბრალოდ დაამატე ერთი ჩანაწერი: id უნიკალური,
-# templates-ში ზონა→base-name (გაფართოებების გარეშე).
-TEMPLATE_SETS = [
-    {"id": "riverbank",
-     "name_en": "Riverbank line", "name_ka": "მდინარის ნაპირი",
-     "templates": {"37": "riverbank_line37", "38": "riverbank_line38"}},
-    {"id": "gas_crossing",
-     "name_en": "Gas pipe crossing", "name_ka": "გაზსადენის გადაკვეთა",
-     "templates": {"37": "Gas_Pipe_Crossing37", "38": "Gas_Pipe_Crossing38"}},
-    {"id": "protzone_crossing",
-     "name_en": "Protection zone crossing", "name_ka": "დაცვის ზონების გადაკვეთა",
-     "templates": {"37": "Gas_Pipe_ProtZone_Crossing37", "38": "Gas_Pipe_ProtZone_Crossing38"}},
-    {"id": "utm_grid",
-     "name_en": "UTM grid", "name_ka": "UTM ბადე",
-     "zoned": False,
-     "templates": {"grid": "Georgia_UTM_37_38_grid"}},
-]
+# ---- შაბლონების ნაკრებები / template sets ----------------------------------
+# გაზიარებულია tools/template_sets.py-ში (zone_intersect.py-საც სჭირდება
+# იგივე მონაცემი თავისი ჩაშენებული კოპირების სექციებისთვის).
+from tools.template_sets import TEMPLATE_SETS
+# sidebar-დან გადატანილი ნაკრებების id-ები — ეს 4 ახლა „კვეთა და შაბლონი“-ს
+# (LineIntersectTool) და „დაცვის ზონის კვეთა“-ს (ZoneIntersectTool) ბოლოში,
+# საკუთარ სექციებადაა ჩაშენებული (იხ. tools/zone_intersect.py COPY_SECTIONS).
+_MOVED_TEMPLATE_SET_IDS = {"riverbank", "gas_crossing", "utm_grid", "protzone_crossing"}
 
 
 # ---- მთავარი აპლიკაცია / main app -----------------------------------------
@@ -440,11 +430,12 @@ class GisBoxApp(tk.Tk):
         """
         specs = []
         for cfg in TEMPLATE_SETS:
-            if cfg["id"] == "protzone_crossing":
-                # გადატანილია „დაცვის ზონის კვეთა“-ს ბოლოში, საკუთარ სექციად —
-                # ის ხელსაწყო ისედაც ქმნის ამ წერტილოვან გეომეტრიას, ამიტომ
-                # ცალკე sidebar-გვერდი ზედმეტი იყო. TEMPLATE_SETS-ში დარჩა
-                # მხოლოდ "ყველასთვის დამახსოვრების" config-loop-ის გამო.
+            if cfg["id"] in _MOVED_TEMPLATE_SET_IDS:
+                # გადატანილია "დაცვის ზონის კვეთა"/"კვეთა და შაბლონი"-ს
+                # ბოლოში, საკუთარ სექციებად — ცალკე sidebar-გვერდი აღარ
+                # სჭირდება. TEMPLATE_SETS-ში დარჩა მხოლოდ "ყველასთვის
+                # დამახსოვრების" config-loop-ის გამო (და იმ ორი ხელსაწყოს
+                # COPY_SECTIONS-ისთვის).
                 continue
             specs.append({
                 "name_en": cfg["name_en"], "name_ka": cfg["name_ka"],
