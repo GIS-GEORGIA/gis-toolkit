@@ -13,6 +13,7 @@ import json
 import glob
 import shutil
 import traceback
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -32,6 +33,8 @@ APP_DIR = RESOURCE_DIR                       # უკუთავსებად
 DEFAULT_SHP_DIR = os.path.join(RESOURCE_DIR, "shp")
 SETTINGS_FILE = os.path.join(DATA_DIR, "gis_box_settings.json")
 
+GITHUB_URL = "https://github.com/GIS-GEORGIA/gis-toolkit"
+
 # ---- თარგმანები / translations --------------------------------------------
 LANGS = {"en": "English", "ka": "ქართული"}
 
@@ -48,6 +51,8 @@ TR = {
     "log_title":    {"en": "Save log",             "ka": "ლოგის შენახვა"},
     "language":     {"en": "Language",             "ka": "ენა"},
     "theme":        {"en": "Theme",                "ka": "თემა"},
+    "github_tip":   {"en": "Open the GitHub repository",
+                     "ka": "GitHub რეპოზიტორის გახსნა"},
     "light":        {"en": "Light",                "ka": "ღია"},
     "dark":         {"en": "Dark",                 "ka": "მუქი"},
 
@@ -760,6 +765,13 @@ class GisBoxApp(tk.Tk):
         ttk.Label(topbar, text="GIS_BOX", style="Title.TLabel").pack(side="left")
         ttk.Label(topbar, text=self.t("app_tagline"),
                   style="Subtitle.TLabel").pack(side="left", padx=(12, 0))
+
+        # მარჯვენა კუთხე: GitHub (მარჯვნიდან მარცხნივ იწყობა, ამიტომ პირველია)
+        gh_btn = ttk.Label(topbar, text="⭐ GitHub", style="Header.TLabel",
+                           cursor="hand2")
+        gh_btn.pack(side="right", padx=(0, 16))
+        gh_btn.bind("<Button-1>", lambda _e: webbrowser.open(GITHUB_URL))
+        add_tip(gh_btn, self.t("github_tip"))
 
         # მარჯვნივ: ენა + თემა (მარჯვნიდან მარცხნივ იწყობა)
         self.theme_cb = ttk.Combobox(topbar, width=9, state="readonly",
