@@ -5,7 +5,8 @@ import pytest
 from openpyxl import Workbook
 
 from tools.xlsx_format import (write_block, write_title, clean_number, DEGREE_FMT,
-                               save_workbook, FileLockedError)
+                               save_workbook, FileLockedError,
+                               format_area, write_areas_block)
 
 
 def test_write_block_basic():
@@ -71,3 +72,31 @@ def test_save_workbook_locked_raises():
     with pytest.raises(FileLockedError) as ei:
         save_workbook(_LockedWB(), "busy.xlsx")
     assert ei.value.path == "busy.xlsx"
+
+
+def test_format_area_four_variants():
+    assert format_area(100.03254, "en", True) == "100 m2"
+    assert format_area(100.03254, "en", False) == "100.03254 m2"
+    assert format_area(100.03254, "ka", True) == "100მ2"
+    assert format_area(100.03254, "ka", False) == "100.03254 მ2"
+
+
+def test_format_area_rounds_to_five_decimals_strips_trailing_zeros():
+    assert format_area(200.0520001, "en", False) == "200.052 m2"
+    assert format_area(200.0, "en", False) == "200 m2"
+
+
+def test_write_areas_block_layout_and_gap():
+    wb = Workbook(); ws = wb.active
+    metrics = [("ნაკვეთის ფართი", "Parcel area", 200.052),
+               ("მოჭრილი ფართი", "Cut-out area", 100.0),
+               ("დარჩენილი ფართი", "Remaining area", 100.052)]
+    last = write_areas_block(ws, title_row=10, start_col=7, metrics=metrics)
+    assert last == 14                       # title(10) + header(11) + 3 data rows
+    # 2-cell gap between the EN block (H/I) and the KA block (L/M) — cols J/K empty
+    assert ws.cell(12, 10).value is None and ws.cell(12, 11).value is None
+    assert ws.cell(12, 8).value == "200 m2"          # H — EN rounded
+    assert ws.cell(12, 9).value == "200.052 m2"      # I — EN unrounded
+    assert ws.cell(12, 12).value == "200მ2"          # L — KA rounded
+    assert ws.cell(12, 13).value == "200.052 მ2"     # M — KA unrounded
+    assert ws.cell(12, 13).font.name == "Sylfaen"

@@ -277,6 +277,7 @@ class ShpCoordsTool(ToolFrame):
         saved = self.app.get_tool_config(self.tid)
         self._shp_map = {}         # basename -> full path
         self._detected_zone = None
+        self._pending_areas = None  # დაცვის ზონის კვეთიდან გადმოცემული ფართები
 
         ttk.Label(self, text=self.tr("heading"),
                   font=(UI_FONT, 13, "bold")).grid(
@@ -533,6 +534,16 @@ class ShpCoordsTool(ToolFrame):
                 self.shp_var.set(disp)
                 self._on_shp_selected()
                 break
+
+    def set_pending_areas(self, areas):
+        """„დაცვის ზონის კვეთა“-დან გადმოცემული ფართები (ნაკვეთი/მოჭრილი/
+        დარჩენილი) — შემდეგი Excel ექსპორტი კოორდინატების ცხრილის შემდეგ
+        დაწერს მათ (4 ფორმატით: დამრგვალებული/დაუმრგვალებელი × EN/KA)."""
+        if areas and (areas.get("parcel_area") or areas.get("cut_area")
+                      or areas.get("remainder_area")):
+            self._pending_areas = areas
+        else:
+            self._pending_areas = None
 
     def _on_shp_selected(self):
         shp = self._shp_map.get(self.shp_var.get())
@@ -1004,6 +1015,21 @@ class ShpCoordsTool(ToolFrame):
         write_block(ws, header_row, col, headers, rows,
                     angle_index=(3 if angle_on else None),
                     angle_fmt=ANGLE_FMT, col_widths=copy_widths)
+
+        # --- ფართების ბლოკი (დაცვის ზონის კვეთიდან) — კოორდინატების ცხრილის
+        # შემდეგ, 2 ცარიელი რიგის დაშორებით ---
+        if self._pending_areas:
+            from tools.xlsx_format import write_areas_block
+            a = self._pending_areas
+            metrics = [
+                ("ნაკვეთის ფართი", "Parcel area", a.get("parcel_area", 0.0)),
+                ("მოჭრილი ფართი (ნაკვეთი ∩ ზონა)",
+                 "Cut-out area (parcel ∩ zone)", a.get("cut_area", 0.0)),
+                ("დარჩენილი ფართი", "Remaining area",
+                 a.get("remainder_area", 0.0)),
+            ]
+            last_data_row = header_row + len(rows)
+            write_areas_block(ws, last_data_row + 3, col, metrics)
 
         # A:D სვეტების სიგანე
         for c in range(1, 5):

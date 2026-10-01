@@ -143,6 +143,73 @@ def write_block(ws, header_row, start_col, headers, rows,
     return header_row
 
 
+def format_area(value, lang, rounded):
+    """ფართის მნიშვნელობის დაფორმატება 4 ვარიანტიდან ერთ-ერთად.
+
+    ``lang`` — "en" ("m2") ან "ka" ("მ2"); ``rounded`` — მთელ რიცხვამდე
+    დამრგვალებული (უერთეულო სფეისით ინგლისურში, უსფეისოდ ქართულში) თუ
+    5-ნიშნა ზუსტი მნიშვნელობა (ორივე ენაზე სფეისით ერთეულის წინ):
+    ``100 m2`` / ``100.03254 m2`` / ``100მ2`` / ``100.03254 მ2``."""
+    v = round(value or 0.0, 0 if rounded else 5)
+    if float(v).is_integer():
+        num = str(int(v))
+    else:
+        num = f"{v:.5f}".rstrip("0").rstrip(".")
+    if lang == "ka":
+        return f"{num}მ2" if rounded else f"{num} მ2"
+    return f"{num} m2"
+
+
+def write_areas_block(ws, title_row, start_col, metrics,
+                      title="ფართები / Areas", font_name="Sylfaen"):
+    """კოორდინატების ცხრილის შემდეგ ფართების ბლოკი — თითო მეტრიკისთვის
+    (ნაკვეთი/მოჭრილი/დარჩენილი) 4 უჯრა: EN დამრგვალებული/დაუმრგვალებელი,
+    2-უჯრა დაშორებით KA დამრგვალებული/დაუმრგვალებელი.
+
+    ``metrics`` — ``[(label_ka, label_en, area_m2), …]``. აბრუნებს ბოლო
+    გამოყენებულ რიგს."""
+    from openpyxl.styles import Font
+    s = _styles()
+    label_col, en_r, en_u = start_col, start_col + 1, start_col + 2
+    ka_r, ka_u = start_col + 5, start_col + 6          # start_col+3/+4 — ცარიელი (გეპი)
+    last_col = ka_u
+
+    ws.merge_cells(start_row=title_row, start_column=label_col,
+                   end_row=title_row, end_column=last_col)
+    t = ws.cell(row=title_row, column=label_col, value=title)
+    t.font = Font(name=font_name, bold=True, size=11)
+    t.alignment = s["center"]
+
+    hdr_row = title_row + 1
+
+    def hdr(col, text, font=None):
+        c = ws.cell(row=hdr_row, column=col, value=text)
+        c.font = Font(name=font or "Calibri", bold=True)
+        c.alignment = s["center"]
+        c.border = s["border"]
+
+    hdr(en_r, "rounded")
+    hdr(en_u, "unrounded")
+    hdr(ka_r, "დამრგვალებული", font_name)
+    hdr(ka_u, "დაუმრგვალებელი", font_name)
+
+    r = hdr_row
+    for label_ka, label_en, value in metrics:
+        r += 1
+        lab = ws.cell(row=r, column=label_col, value=f"{label_ka} / {label_en}")
+        lab.font = Font(name=font_name, bold=True)
+        lab.alignment = s["center"]
+        lab.border = s["border"]
+        for col, lang, rounded in ((en_r, "en", True), (en_u, "en", False),
+                                   (ka_r, "ka", True), (ka_u, "ka", False)):
+            c = ws.cell(row=r, column=col, value=format_area(value, lang, rounded))
+            c.alignment = s["center"]
+            c.border = s["border"]
+            if lang == "ka":
+                c.font = Font(name=font_name)
+    return r
+
+
 def write_title(ws, title, top_row, start_col, ncols, rows=3,
                 font_name="Sylfaen", size=11, total_width_chars=None):
     """ტექსტური ქუდი — merge & center ბლოკი, wrap text, all-borders და (არჩევით)

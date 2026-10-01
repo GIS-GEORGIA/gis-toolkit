@@ -36,7 +36,8 @@ DEFAULT_OUT_NAME = "Gas_Pipe_ProtZone_Crossing"
 
 # „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შესანახი სახელის შეთავაზება — იგივე
 # <base><UTM ზონა>_<N> სქემით (მომხმარებელი შეცვლის დიალოგში დაწკაპებისას).
-DEFAULT_CUT_NAME = "Nakvetis_Mochrili_Nawili"
+# მაგ. Parcel_clipped_part38_1
+DEFAULT_CUT_NAME = "Parcel_clipped_part"
 
 
 def _auto_zone_field(fields):
@@ -563,6 +564,13 @@ class ZoneIntersectTool(ToolFrame):
         frame = self.app.show_tool_by_tid("shp_coords")
         if frame is not None and hasattr(frame, "load_external"):
             frame.load_external(self._last_output)
+        if frame is not None and hasattr(frame, "set_pending_areas"):
+            a = self._last_areas or {}
+            frame.set_pending_areas({
+                "parcel_area": a.get("parcel_area", 0.0),
+                "cut_area": a.get("cut_area", 0.0),
+                "remainder_area": a.get("remainder_area", 0.0),
+            })
         return frame
 
     def _open_in_coords(self):
