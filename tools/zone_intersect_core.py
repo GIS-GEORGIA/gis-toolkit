@@ -105,6 +105,42 @@ def _corridor_axis(zones):
     return dx, dy
 
 
+def clip_areas(parcels, zones):
+    """ნაკვეთის საერთო ფართი, ზონასთან გადაკვეთილი („მოჭრილი“) ნაწილი და დარჩენილი ნაწილი.
+
+    parcels/zones — shapely პოლიგონების იტერაცია, ერთსა და იმავე მეტრულ (UTM) CRS-ში —
+    ასე ``.area`` პირდაპირ კვ.მ-შია, დამატებითი გადაყვანის გარეშე. აბრუნებს dict-ს:
+
+    - ``parcel``/``cut``/``remainder`` — გაერთიანებული ნაკვეთის, ნაკვეთი∩ზონის
+      („მოჭრილი“) და ნაკვეთი−ზონის („დარჩენილი“) shapely გეომეტრიები (ან ``None``);
+    - ``parcel_area``/``cut_area``/``remainder_area`` — შესაბამისი ფართები (float, კვ.მ).
+    """
+    from shapely.ops import unary_union
+
+    parcels = [p for p in parcels if p is not None and not p.is_empty]
+    zones = [z for z in zones if z is not None and not z.is_empty]
+    parcel_u = unary_union(parcels) if parcels else None
+    if parcel_u is None or parcel_u.is_empty:
+        return {"parcel": None, "cut": None, "remainder": None,
+                "parcel_area": 0.0, "cut_area": 0.0, "remainder_area": 0.0}
+
+    zone_u = unary_union(zones) if zones else None
+    if zone_u is None or zone_u.is_empty:
+        cut, remainder = None, parcel_u
+    else:
+        cut = parcel_u.intersection(zone_u)
+        remainder = parcel_u.difference(zone_u)
+
+    cut_area = cut.area if cut is not None and not cut.is_empty else 0.0
+    remainder_area = remainder.area if remainder is not None and not remainder.is_empty else 0.0
+    return {
+        "parcel": parcel_u, "cut": cut, "remainder": remainder,
+        "parcel_area": parcel_u.area,
+        "cut_area": cut_area,
+        "remainder_area": remainder_area,
+    }
+
+
 def collect_points(parcels, zones, ndigits=4):
     """ყველა ნაკვეთი × ყველა ზონა — უნიკალური, დერეფნის გასწვრივ დალაგებული წერტილები.
 

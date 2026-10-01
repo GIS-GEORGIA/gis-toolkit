@@ -16,12 +16,12 @@ import re
 import threading
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
-from tools.zone_intersect_core import collect_points
+from tools.zone_intersect_core import collect_points, clip_areas
 
 ALL_SENTINEL = "— all —"          # „ყველა ზონა“ მარკერი value-combo-ში
 # ზონის ველის ავტო-შერჩევა: ჯერ id/FID-ის მსგავსი (ზუსტი დამთხვევა), მერე
@@ -33,6 +33,10 @@ _AUTO_FIELDS_SUBSTR = ("fid", "objectid", "id", "zon", "type", "code", "name")
 # გამომავალი შრის ნაგულისხმევი საბაზისო სახელი (მომხმარებელი შეცვლის).
 # საბოლოო: <base><UTM ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
 DEFAULT_OUT_NAME = "Gas_Pipe_ProtZone_Crossing"
+
+# „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შესანახი სახელის შეთავაზება — იგივე
+# <base><UTM ზონა>_<N> სქემით (მომხმარებელი შეცვლის დიალოგში დაწკაპებისას).
+DEFAULT_CUT_NAME = "Nakvetis_Mochrili_Nawili"
 
 
 def _auto_zone_field(fields):
@@ -81,6 +85,8 @@ ZTR = {
     "btn_coords": {"en": "Open in Shp → coordinates",
                    "ka": "Shp → კოორდინატებში გახსნა"},
     "btn_excel": {"en": "Excel table", "ka": "Excel ცხრილი"},
+    "btn_cut": {"en": "Save cut-out geometry…",
+                "ka": "მოჭრილი გეომეტრიის შენახვა…"},
 
     "cfg_saved": {"en": "Paths remembered.", "ka": "გზები დამახსოვრდა."},
     "warn_parcel": {"en": "Select a valid parcel shapefile.",
@@ -95,6 +101,16 @@ ZTR = {
                         "საზღვრები არ იკვეთება."},
     "warn_nocreate": {"en": "Create the points first.",
                       "ka": "ჯერ წერტილები შექმენი."},
+    "warn_nocut": {"en": "No overlap between the parcel and the zone — "
+                        "nothing to cut out.",
+                  "ka": "ნაკვეთსა და ზონას შორის გადაკვეთა არ არის — "
+                        "ამოსაჭრელი არაფერია."},
+    "pick_cut_out": {"en": "Choose an output folder for the cut-out geometry",
+                     "ka": "აირჩიე გამომავალი საქაღალდე მოჭრილი გეომეტრიისთვის"},
+    "ask_cut_name": {"en": "Output name for the cut-out geometry:",
+                     "ka": "მოჭრილი გეომეტრიის გამომავალი სახელი:"},
+    "cut_saved": {"en": "Cut-out geometry saved — {area} m²  → {path}",
+                 "ka": "მოჭრილი გეომეტრია შენახულია — {area} მ²  → {path}"},
     "crs_warn": {"en": "The parcel shapefile has no CRS (.prj); output will have "
                        "none either and the zone must be chosen manually in "
                        "“Shp → coordinates”.",
@@ -130,6 +146,11 @@ ZTR = {
                    "ka": "შექმნილი წერტილების გახსნა „Shp → კოორდინატებში“."},
     "tip_excel": {"en": "Open in “Shp → coordinates” and export the Excel table.",
                   "ka": "„Shp → კოორდინატებში“ გახსნა და Excel ცხრილის ექსპორტი."},
+    "tip_cut": {"en": "Save the parcel ∩ zone overlap (the “cut-out” piece) as "
+                     "its own polygon shapefile, in a folder you choose.",
+               "ka": "ნაკვეთისა და ზონის გადაკვეთის ნაწილის („მოჭრილის“) "
+                     "შენახვა ცალკე პოლიგონურ shapefile-ად, შენ მიერ "
+                     "არჩეულ საქაღალდეში."},
 }
 
 
@@ -150,6 +171,9 @@ class ZoneIntersectTool(ToolFrame):
         self.msg_queue = queue.Queue()
         self._zone_meta = {}          # {field: [distinct values...]}
         self._last_output = None
+        self._last_crs = None
+        self._last_areas = None
+        self._last_cut_geom = None
 
         ttk.Label(self, text=self.tr("heading"),
                   font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
@@ -224,6 +248,10 @@ class ZoneIntersectTool(ToolFrame):
                                     command=self._excel, state="disabled")
         self.excel_btn.pack(side="left", padx=(8, 0))
         add_tip(self.excel_btn, self.tr("tip_excel"))
+        self.cut_btn = ttk.Button(brow, text=self.tr("btn_cut"),
+                                  command=self._save_cut_geometry, state="disabled")
+        self.cut_btn.pack(side="left", padx=(8, 0))
+        add_tip(self.cut_btn, self.tr("tip_cut"))
 
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill="x", pady=(6, 2))
@@ -375,9 +403,10 @@ class ZoneIntersectTool(ToolFrame):
             parcels = [g for g in pgdf.geometry if g is not None]
             zones = [g for g in zgdf.geometry if g is not None]
             pts = collect_points(parcels, zones)
+            areas = clip_areas(parcels, zones)
 
             self.msg_queue.put(("result", {
-                "points": pts, "crs": target_crs, "out": out,
+                "points": pts, "crs": target_crs, "out": out, "areas": areas,
             }))
         except ImportError as e:
             self.msg_queue.put(("dep_err", str(e)))
@@ -455,6 +484,15 @@ class ZoneIntersectTool(ToolFrame):
     def _on_result(self, res):
         self._reset()
         pts = res["points"]
+        areas = res.get("areas") or {}
+        self._last_crs = res["crs"]
+        self._last_areas = areas
+        cut = areas.get("cut")
+        # area > 0 გამორიცხავს წერტილოვან/ხაზოვან კვეთებს (LineIntersectTool-ში
+        # ორი ხაზის კვეთას ფართი არ აქვს — „მოჭრა“ მხოლოდ პოლიგონებს აქვს აზრი)
+        self._last_cut_geom = (cut if cut is not None and not cut.is_empty
+                               and cut.area > 0 else None)
+        self.cut_btn.configure(state="normal" if self._last_cut_geom else "disabled")
         if not pts:
             self.status.set(self.tr("warn_none"))
             messagebox.showinfo("GIS_BOX", self.tr("warn_none"))
@@ -480,6 +518,41 @@ class ZoneIntersectTool(ToolFrame):
         self.app.log("— " + msg)
         if res["crs"] is None:
             self.app.log("  ⚠ " + self.tr("crs_warn"))
+        messagebox.showinfo("GIS_BOX", msg)
+
+    # ---- „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შენახვა ----
+    def _save_cut_geometry(self):
+        if self._last_cut_geom is None or self._last_cut_geom.is_empty:
+            messagebox.showinfo("GIS_BOX", self.tr("warn_nocut"))
+            return
+        out = filedialog.askdirectory(initialdir=self.out_var.get() or None,
+                                      title=self.tr("pick_cut_out"))
+        if not out:
+            return
+        znum = self._zone_num_from_crs(self._last_crs)
+        base = DEFAULT_CUT_NAME + znum
+        suggested = os.path.splitext(
+            os.path.basename(self._next_free_path(out, base)))[0]
+        name = simpledialog.askstring(
+            "GIS_BOX", self.tr("ask_cut_name"), initialvalue=suggested,
+            parent=self)
+        if not name or not name.strip():
+            return
+        base = self._sanitize(name.strip())
+        out_path = self._next_free_path(out, base)
+        geom = self._last_cut_geom
+        try:
+            import geopandas as gpd
+            parts = list(geom.geoms) if hasattr(geom, "geoms") else [geom]
+            rows = [{"N": i, "Area_m2": round(g.area, 5)}
+                    for i, g in enumerate(parts, start=1)]
+            gdf = gpd.GeoDataFrame(rows, geometry=parts, crs=self._last_crs)
+            gdf.to_file(out_path, driver="ESRI Shapefile", encoding="utf-8")
+        except Exception as e:                  # noqa: BLE001
+            messagebox.showerror(self.tr("err"), str(e))
+            return
+        msg = self.tr("cut_saved", area=round(geom.area, 3), path=out_path)
+        self.app.log("— " + msg)
         messagebox.showinfo("GIS_BOX", msg)
 
     # ---- ინტეგრაცია: Shp → კოორდინატები ----

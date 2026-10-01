@@ -7,7 +7,7 @@ pytest.importorskip("shapely")   # shapely-ის გარეშე გარ�
 
 from shapely.geometry import Polygon, LineString, MultiPoint, GeometryCollection
 from tools.zone_intersect_core import (
-    _iter_points, _as_curve, crossing_points, collect_points,
+    _iter_points, _as_curve, crossing_points, collect_points, clip_areas,
 )
 
 
@@ -103,3 +103,38 @@ def test_collect_points_handles_empty_inputs():
     assert collect_points([], []) == []
     parcel = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     assert collect_points([parcel], []) == []
+
+
+# ---- clip_areas ----
+
+def test_clip_areas_corner_overlap_sums_to_parcel_area():
+    parcel = Polygon([(0, 0), (20, 0), (20, 10), (0, 10)])          # 200 მ2
+    zone = Polygon([(-5, 5), (10, 5), (10, 20), (-5, 20)])          # კუთხე ემთხვევა
+    res = clip_areas([parcel], [zone])
+    assert res["parcel_area"] == pytest.approx(200.0)
+    assert res["cut_area"] == pytest.approx(50.0)
+    assert res["remainder_area"] == pytest.approx(150.0)
+    assert res["cut_area"] + res["remainder_area"] == pytest.approx(res["parcel_area"])
+    assert res["cut"].geom_type in ("Polygon", "MultiPolygon")
+    assert res["remainder"].geom_type in ("Polygon", "MultiPolygon")
+
+
+def test_clip_areas_no_overlap_cut_is_none_remainder_is_full_parcel():
+    parcel = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    zone = Polygon([(5, 5), (6, 5), (6, 6), (5, 6)])
+    res = clip_areas([parcel], [zone])
+    assert res["cut"].is_empty
+    assert res["cut_area"] == 0.0
+    assert res["remainder_area"] == pytest.approx(1.0)
+    assert res["remainder"].equals(parcel)
+
+
+def test_clip_areas_handles_empty_inputs():
+    res = clip_areas([], [])
+    assert res == {"parcel": None, "cut": None, "remainder": None,
+                   "parcel_area": 0.0, "cut_area": 0.0, "remainder_area": 0.0}
+    parcel = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    res = clip_areas([parcel], [])
+    assert res["cut"] is None
+    assert res["parcel_area"] == pytest.approx(1.0)
+    assert res["remainder_area"] == pytest.approx(1.0)
