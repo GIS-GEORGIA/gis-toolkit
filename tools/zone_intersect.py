@@ -539,8 +539,14 @@ class ZoneIntersectTool(ToolFrame):
             parent=self)
         if not name or not name.strip():
             return
-        base = self._sanitize(name.strip())
-        out_path = self._next_free_path(out, base)
+        chosen = self._sanitize(name.strip())
+        out_path = os.path.join(out, chosen + ".shp")
+        if os.path.exists(out_path):
+            # სახელი დაკავებულია (მაგ. იგივე შეთავაზება ხელახლა მიიღო) — უკვე
+            # დართული _<N> მოვაცილოთ და იქიდან ვიპოვოთ შემდეგი თავისუფალი,
+            # რომ "_1_1"-ის მსგავსი ორმაგი სუფიქსი არ დაერთოს.
+            stem = re.sub(r"_\d+$", "", chosen) or chosen
+            out_path = self._next_free_path(out, stem)
         geom = self._last_cut_geom
         try:
             import geopandas as gpd
