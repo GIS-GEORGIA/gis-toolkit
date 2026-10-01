@@ -560,13 +560,13 @@ class GisBoxApp(tk.Tk):
         """ხელსაწყოს frame-ის შექმნა; შეცდომისას — მეგობრული error frame."""
         spec = self.tool_specs[idx]
         try:
-            return spec["factory"](self.container)
+            return spec["factory"](self.tool_host)
         except Exception as e:
             return self._error_frame(e)
 
     def _error_frame(self, exc):
         p = self.palette
-        frame = ttk.Frame(self.container, padding=20)
+        frame = ttk.Frame(self.tool_host, padding=20)
         ttk.Label(frame, text=self.t("tool_load_err"),
                   font=(UI_FONT, 13, "bold"), foreground="#c0392b").pack(
             anchor="w", pady=(0, 8))
@@ -797,6 +797,7 @@ class GisBoxApp(tk.Tk):
         # ლოგი
         logframe = ttk.LabelFrame(self.container, text=self.t("log"), padding=4)
         logframe.pack(side="bottom", fill="x")
+        self._build_scrollable_tool_host(self.container, p)
         logbar = ttk.Frame(logframe)
         logbar.pack(fill="x", pady=(0, 2))
         ttk.Button(logbar, text=self.t("log_save"), command=self.save_log).pack(side="right")
@@ -835,6 +836,60 @@ class GisBoxApp(tk.Tk):
         if self.current_tool >= len(self.tool_specs):
             self.current_tool = 0
         self.show(self.current_tool)
+
+    def _build_scrollable_tool_host(self, parent, p):
+        """სქროლირებადი არე აქტიური ხელსაწყოს frame-ისთვის — რომ გრძელი
+        ფანჯრის (ბევრი ველი/სექცია) ქვედა ნაწილი ფანჯრის სიმაღლეზე მეტის
+        დროსაც ხელმისაწვდომი დარჩეს (და არა უბრალოდ შეკვეცილი/უხილავი).
+        ``self.tool_host`` ხდება frame-ების ნამდვილი მშობელი (``self.container``
+        ნაცვლად) — ``_instantiate_tool``/``_error_frame``/``show`` მას იყენებენ."""
+        wrap = ttk.Frame(parent)
+        wrap.pack(side="top", fill="both", expand=True)
+
+        canvas = tk.Canvas(wrap, highlightthickness=0, bg=p["bg"])
+        vsb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        self.tool_host = ttk.Frame(canvas)
+        host_win = canvas.create_window((0, 0), window=self.tool_host, anchor="nw")
+
+        def _on_host_configure(_e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        self.tool_host.bind("<Configure>", _on_host_configure)
+
+        def _on_canvas_configure(e):
+            canvas.itemconfigure(host_win, width=e.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # თაგუნას ბორბალი — მხოლოდ მაშინ, როცა კურსორი ამ canvas-ზეა (არა
+        # bind_all მუდმივად, რომ rebuild_ui-ის შემდეგ ძველ (განადგურებულ)
+        # canvas-ზე მიმთითებელი handler-ი არ დარჩეს).
+        def _wheel(e):
+            try:
+                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            except tk.TclError:
+                pass
+
+        def _wheel_linux(e):
+            try:
+                canvas.yview_scroll(-1 if e.num == 4 else 1, "units")
+            except tk.TclError:
+                pass
+
+        def _bind_wheel(_e):
+            canvas.bind_all("<MouseWheel>", _wheel)
+            canvas.bind_all("<Button-4>", _wheel_linux)
+            canvas.bind_all("<Button-5>", _wheel_linux)
+
+        def _unbind_wheel(_e):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", _bind_wheel)
+        canvas.bind("<Leave>", _unbind_wheel)
 
     def show(self, idx):
         self.current_tool = idx
