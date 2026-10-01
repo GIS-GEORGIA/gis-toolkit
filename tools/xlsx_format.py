@@ -143,55 +143,48 @@ def write_block(ws, header_row, start_col, headers, rows,
     return header_row
 
 
-def format_area(value, lang, rounded):
-    """ფართის მნიშვნელობის დაფორმატება 4 ვარიანტიდან ერთ-ერთად.
-
-    ``lang`` — "en" ("m2") ან "ka" ("მ2"); ``rounded`` — მთელ რიცხვამდე
-    დამრგვალებული (უერთეულო სფეისით ინგლისურში, უსფეისოდ ქართულში) თუ
-    5-ნიშნა ზუსტი მნიშვნელობა (ორივე ენაზე სფეისით ერთეულის წინ):
-    ``100 m2`` / ``100.03254 m2`` / ``100მ2`` / ``100.03254 მ2``."""
+def format_area(value, rounded):
+    """ფართის მნიშვნელობის დაფორმატება — ერთეული ყოველთვის ``kv.m``
+    (სფეისით რიცხვის შემდეგ): ``rounded`` → მთელ რიცხვამდე დამრგვალებული
+    (``1000 kv.m``), თორემ 5-ნიშნა ზუსტი მნიშვნელობა (``1000.38126 kv.m``)."""
     v = round(value or 0.0, 0 if rounded else 5)
     if float(v).is_integer():
         num = str(int(v))
     else:
         num = f"{v:.5f}".rstrip("0").rstrip(".")
-    if lang == "ka":
-        return f"{num}მ2" if rounded else f"{num} მ2"
-    return f"{num} m2"
+    return f"{num} kv.m"
 
 
-def write_areas_block(ws, title_row, start_col, metrics,
-                      title="ფართები / Areas", font_name="Sylfaen"):
-    """კოორდინატების ცხრილის შემდეგ ფართების ბლოკი — თითო მეტრიკისთვის
-    (ნაკვეთი/მოჭრილი/დარჩენილი) 4 უჯრა: EN დამრგვალებული/დაუმრგვალებელი,
-    2-უჯრა დაშორებით KA დამრგვალებული/დაუმრგვალებელი.
+def write_areas_block(ws, title_row, label_col, metrics,
+                      title="ფართები / Areas", font_name="Sylfaen", ncols=3):
+    """ფართების ბლოკი კოორდინატების ცხრილის **გვერდით** (მარჯვნივ), იმავე
+    საწყის რიგზე (``title_row`` == კოორდინატების ბლოკის თავი) — არა ქვემოთ.
+    გამომძახებელი თავად ითვლის ``label_col``-ს ისე, რომ კოორდინატების ბოლო
+    სვეტსა და ამ ბლოკს შორის 2 ცარიელი სვეტის დაშორება დარჩეს.
 
-    ``metrics`` — ``[(label_ka, label_en, area_m2), …]``. აბრუნებს ბოლო
-    გამოყენებულ რიგს."""
+    თითო მეტრიკისთვის — 3 უჯრა: ორენოვანი ლეიბლი, დამრგვალებული, 5-ნიშნა
+    ზუსტი მნიშვნელობა (ორივე ``kv.m``-ით). ``metrics`` —
+    ``[(label_ka, label_en, area_m2), …]``. აბრუნებს ბოლო გამოყენებულ რიგს."""
     from openpyxl.styles import Font
     s = _styles()
-    label_col, en_r, en_u = start_col, start_col + 1, start_col + 2
-    ka_r, ka_u = start_col + 5, start_col + 6          # start_col+3/+4 — ცარიელი (გეპი)
-    last_col = ka_u
+    rounded_col, unrounded_col = label_col + 1, label_col + 2
 
     ws.merge_cells(start_row=title_row, start_column=label_col,
-                   end_row=title_row, end_column=last_col)
+                   end_row=title_row, end_column=label_col + ncols - 1)
     t = ws.cell(row=title_row, column=label_col, value=title)
     t.font = Font(name=font_name, bold=True, size=11)
     t.alignment = s["center"]
 
     hdr_row = title_row + 1
 
-    def hdr(col, text, font=None):
+    def hdr(col, text):
         c = ws.cell(row=hdr_row, column=col, value=text)
-        c.font = Font(name=font or "Calibri", bold=True)
+        c.font = Font(bold=True)
         c.alignment = s["center"]
         c.border = s["border"]
 
-    hdr(en_r, "rounded")
-    hdr(en_u, "unrounded")
-    hdr(ka_r, "დამრგვალებული", font_name)
-    hdr(ka_u, "დაუმრგვალებელი", font_name)
+    hdr(rounded_col, "rounded")
+    hdr(unrounded_col, "unrounded")
 
     r = hdr_row
     for label_ka, label_en, value in metrics:
@@ -200,13 +193,10 @@ def write_areas_block(ws, title_row, start_col, metrics,
         lab.font = Font(name=font_name, bold=True)
         lab.alignment = s["center"]
         lab.border = s["border"]
-        for col, lang, rounded in ((en_r, "en", True), (en_u, "en", False),
-                                   (ka_r, "ka", True), (ka_u, "ka", False)):
-            c = ws.cell(row=r, column=col, value=format_area(value, lang, rounded))
+        for col, rounded in ((rounded_col, True), (unrounded_col, False)):
+            c = ws.cell(row=r, column=col, value=format_area(value, rounded))
             c.alignment = s["center"]
             c.border = s["border"]
-            if lang == "ka":
-                c.font = Font(name=font_name)
     return r
 
 

@@ -74,29 +74,35 @@ def test_save_workbook_locked_raises():
     assert ei.value.path == "busy.xlsx"
 
 
-def test_format_area_four_variants():
-    assert format_area(100.03254, "en", True) == "100 m2"
-    assert format_area(100.03254, "en", False) == "100.03254 m2"
-    assert format_area(100.03254, "ka", True) == "100მ2"
-    assert format_area(100.03254, "ka", False) == "100.03254 მ2"
+def test_format_area_rounded_and_unrounded():
+    assert format_area(1000.38126, True) == "1000 kv.m"
+    assert format_area(1000.38126, False) == "1000.38126 kv.m"
 
 
 def test_format_area_rounds_to_five_decimals_strips_trailing_zeros():
-    assert format_area(200.0520001, "en", False) == "200.052 m2"
-    assert format_area(200.0, "en", False) == "200 m2"
+    assert format_area(200.0520001, False) == "200.052 kv.m"
+    assert format_area(200.0, False) == "200 kv.m"
 
 
-def test_write_areas_block_layout_and_gap():
+def test_write_areas_block_layout():
+    # ფართების ბლოკი კოორდინატების გვერდით — label_col = coord_col + ncols + 2
+    # (მაგ. coord G:I (3 სვეტი) + 2 ცარიელი (J,K) => areas L-დან)
     wb = Workbook(); ws = wb.active
-    metrics = [("ნაკვეთის ფართი", "Parcel area", 200.052),
-               ("მოჭრილი ფართი", "Cut-out area", 100.0),
-               ("დარჩენილი ფართი", "Remaining area", 100.052)]
-    last = write_areas_block(ws, title_row=10, start_col=7, metrics=metrics)
-    assert last == 14                       # title(10) + header(11) + 3 data rows
-    # 2-cell gap between the EN block (H/I) and the KA block (L/M) — cols J/K empty
-    assert ws.cell(12, 10).value is None and ws.cell(12, 11).value is None
-    assert ws.cell(12, 8).value == "200 m2"          # H — EN rounded
-    assert ws.cell(12, 9).value == "200.052 m2"      # I — EN unrounded
-    assert ws.cell(12, 12).value == "200მ2"          # L — KA rounded
-    assert ws.cell(12, 13).value == "200.052 მ2"     # M — KA unrounded
-    assert ws.cell(12, 13).font.name == "Sylfaen"
+    metrics = [("ნაკვეთის ფართი", "Parcel area", 1000.38126),
+               ("მოჭრილი ფართი (ნაკვეთი ∩ ზონა)",
+                "Cut-out area (parcel ∩ zone)", 104.47628),
+               ("დარჩენილი ფართი", "Remaining area", 895.90497)]
+    last = write_areas_block(ws, title_row=6, label_col=12, metrics=metrics)
+    assert last == 10                       # title(6) + header(7) + 3 data rows
+    assert ws.cell(6, 12).value == "ფართები / Areas"
+    assert ws.cell(7, 13).value == "rounded"
+    assert ws.cell(7, 14).value == "unrounded"
+    assert ws.cell(8, 12).value == "ნაკვეთის ფართი / Parcel area"
+    assert ws.cell(8, 13).value == "1000 kv.m"
+    assert ws.cell(8, 14).value == "1000.38126 kv.m"
+    assert ws.cell(9, 13).value == "104 kv.m"
+    assert ws.cell(9, 14).value == "104.47628 kv.m"
+    assert ws.cell(10, 13).value == "896 kv.m"
+    assert ws.cell(10, 14).value == "895.90497 kv.m"
+    assert ws.cell(8, 12).font.name == "Sylfaen"
+    assert "L6:N6" in [str(m) for m in ws.merged_cells.ranges]

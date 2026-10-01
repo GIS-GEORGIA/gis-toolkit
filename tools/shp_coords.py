@@ -1016,8 +1016,8 @@ class ShpCoordsTool(ToolFrame):
                     angle_index=(3 if angle_on else None),
                     angle_fmt=ANGLE_FMT, col_widths=copy_widths)
 
-        # --- ფართების ბლოკი (დაცვის ზონის კვეთიდან) — კოორდინატების ცხრილის
-        # შემდეგ, 2 ცარიელი რიგის დაშორებით ---
+        # --- ფართების ბლოკი (დაცვის ზონის კვეთიდან) — კოორდინატების ბლოკის
+        # გვერდით (მარჯვნივ), იმავე საწყის რიგზე, 2 ცარიელი სვეტის დაშორებით ---
         if self._pending_areas:
             from tools.xlsx_format import write_areas_block
             a = self._pending_areas
@@ -1028,8 +1028,8 @@ class ShpCoordsTool(ToolFrame):
                 ("დარჩენილი ფართი", "Remaining area",
                  a.get("remainder_area", 0.0)),
             ]
-            last_data_row = header_row + len(rows)
-            write_areas_block(ws, last_data_row + 3, col, metrics)
+            areas_col = col + ncols + 2
+            write_areas_block(ws, TITLE_ROW, areas_col, metrics)
 
         # A:D სვეტების სიგანე
         for c in range(1, 5):
