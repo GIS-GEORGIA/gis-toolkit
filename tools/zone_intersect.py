@@ -10,9 +10,11 @@
 გადაეცემა (ან იქვე გამოაქვს Excel ცხრილი). სუფთა ლოგიკა ``zone_intersect_core``-შია.
 """
 
+import glob
 import os
 import queue
 import re
+import shutil
 import threading
 
 import tkinter as tk
@@ -152,6 +154,38 @@ ZTR = {
                "ka": "ნაკვეთისა და ზონის გადაკვეთის ნაწილის („მოჭრილის“) "
                      "შენახვა ცალკე პოლიგონურ shapefile-ად, შენ მიერ "
                      "არჩეულ საქაღალდეში."},
+
+    # ---- დამატებით: უკვე მზა გადაკვეთის ფაილების კოპირება ზონის მიხედვით ----
+    "copy_title": {"en": "Also: copy existing crossing files by zone",
+                   "ka": "დამატებით: მზა გადაკვეთის ფაილების კოპირება ზონის მიხედვით"},
+    "copy_desc": {"en": "If a Gas_Pipe_ProtZone_Crossing37/38 file already exists in a "
+                       "folder (e.g. made elsewhere), copy it here instead of "
+                       "recreating the points above.",
+                 "ka": "თუ Gas_Pipe_ProtZone_Crossing37/38 ფაილი უკვე მზადაა რომელიმე "
+                       "საქაღალდეში (მაგ. სხვაგან შექმნილი), დააკოპირე აქედან — "
+                       "ზემოთ წერტილების თავიდან შექმნის ნაცვლად."},
+    "copy_source": {"en": "Source folder:", "ka": "წყარო საქაღალდე:"},
+    "copy_zones": {"en": "UTM zone", "ka": "UTM ზონა"},
+    "copy_zone_label": {"en": "Zone {z}", "ka": "ზონა {z}"},
+    "copy_notfound": {"en": "not found", "ka": "ვერ მოიძებნა"},
+    "copy_target": {"en": "Target folder:", "ka": "სამიზნე საქაღალდე:"},
+    "copy_btn": {"en": "Copy", "ka": "კოპირება"},
+    "copy_remember": {"en": "💾 Remember target", "ka": "💾 სამიზნის დამახსოვრება"},
+    "copy_hint": {"en": "Every copy gets a new incrementing suffix (..._1, ..._2, …).",
+                 "ka": "ყველა დაკოპირება ახალ ზრდად სუფიქსს იღებს (..._1, ..._2, …)."},
+    "warn_copy_zone": {"en": "Select at least one zone.",
+                       "ka": "აირჩიე მინიმუმ ერთი ზონა."},
+    "warn_copy_dest": {"en": "Select a target folder.",
+                       "ka": "აირჩიე სამიზნე საქაღალდე."},
+    "copy_err_mkdir": {"en": "Could not create the target folder.\n{e}",
+                       "ka": "სამიზნე საქაღალდის შექმნა ვერ მოხერხდა.\n{e}"},
+    "copy_done": {"en": "Done — copied: {names} ({n} file(s)) → {dest}",
+                 "ka": "დასრულდა — დაკოპირდა: {names} ({n} ფაილი) → {dest}"},
+    "copy_saved": {"en": "Target folder remembered.", "ka": "სამიზნე საქაღალდე დამახსოვრდა."},
+    "tip_copy_source": {"en": "Folder to look for ready-made crossing files in.",
+                        "ka": "საქაღალდე, სადაც მზა გადაკვეთის ფაილები მოიძებნება."},
+    "tip_copy_target": {"en": "Folder the matched files are copied into.",
+                        "ka": "საქაღალდე, სადაც ნაპოვნი ფაილები დაკოპირდება."},
 }
 
 
@@ -159,6 +193,13 @@ class ZoneIntersectTool(ToolFrame):
     tid = "zone_intersect"
     CATALOG = ZTR
     DEFAULT_NAME = DEFAULT_OUT_NAME       # ქვეკლასი გადააბრუნებს
+    # „დამატებით: მზა ფაილების კოპირება ზონის მიხედვით“ სექცია — მხოლოდ ამ
+    # ხელსაწყოზე (LineIntersectTool-ს თავისი, Gas_Pipe_ProtZone-თან
+    # დაუკავშირებელი სახელები აქვს, ამიტომ არ აშლის).
+    SHOW_COPY_SECTION = True
+    COPY_TID = "protzone_crossing"        # ძველი sidebar-ხელსაწყოს config-id — შენახული
+    COPY_TEMPLATES = {"37": "Gas_Pipe_ProtZone_Crossing37",
+                      "38": "Gas_Pipe_ProtZone_Crossing38"}  # გზა უცვლელად ნარჩუნდება
 
     def _state(self):
         return self.app.tool_state.setdefault(self.tid, {})
@@ -260,9 +301,155 @@ class ZoneIntersectTool(ToolFrame):
         ttk.Label(self, textvariable=self.status,
                   foreground=pal["muted"]).pack(anchor="w", pady=(0, 4))
 
+        if self.SHOW_COPY_SECTION:
+            self._build_copy_section()
+
         self.after(100, self._poll_queue)
         if self.zone_var.get().strip():
             self.after(0, self._load_zone_meta)
+
+    # ---- დამატებით: მზა გადაკვეთის ფაილების კოპირება ზონის მიხედვით ----
+    # (ყოფილი ცალკე sidebar-ხელსაწყო „protzone_crossing“ — აქ გადმოტანილია,
+    # რადგან წერტილების ზემოთ შექმნა იგივეს აკეთებს და ცალკე გვერდი ზედმეტი იყო)
+    def _build_copy_section(self):
+        pal = self.app.palette
+        ttk.Separator(self).pack(fill="x", pady=(16, 10))
+
+        box = ttk.LabelFrame(self, text=self.tr("copy_title"))
+        box.pack(fill="x", pady=(0, 8))
+        ttk.Label(box, text=self.tr("copy_desc"), foreground=pal["muted"],
+                  wraplength=740, justify="left").pack(anchor="w", padx=8,
+                                                        pady=(6, 10))
+
+        src_row = ttk.Frame(box)
+        src_row.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(src_row, text=self.tr("copy_source")).pack(side="left")
+        own_cfg = self.app.get_tool_config(self.COPY_TID)
+        self.cp_src_var = tk.StringVar(value=self.app.source_dir)
+        ttk.Entry(src_row, textvariable=self.cp_src_var).pack(
+            side="left", fill="x", expand=True, padx=(6, 6))
+        add_tip(ttk.Button(src_row, text=self.tr("browse"), width=3,
+                           command=self._cp_pick_source),
+                self.tr("tip_copy_source")).pack(side="left")
+
+        self.cp_zone_box = ttk.LabelFrame(box, text=self.tr("copy_zones"),
+                                          padding=8)
+        self.cp_zone_box.pack(fill="x", padx=8, pady=(0, 8))
+        self.cp_zone_vars = {}
+        self._cp_build_zones()
+
+        dst_row = ttk.Frame(box)
+        dst_row.pack(fill="x", padx=8, pady=(0, 6))
+        ttk.Label(dst_row, text=self.tr("copy_target")).pack(side="left")
+        self.cp_dest_var = tk.StringVar(value=own_cfg.get("dest") or "")
+        ttk.Entry(dst_row, textvariable=self.cp_dest_var).pack(
+            side="left", fill="x", expand=True, padx=(6, 6))
+        add_tip(ttk.Button(dst_row, text=self.tr("browse"), width=3,
+                           command=self._cp_pick_dest),
+                self.tr("tip_copy_target")).pack(side="left")
+
+        ttk.Label(box, text=self.tr("copy_hint"), foreground=pal["muted"],
+                  wraplength=740, justify="left").pack(anchor="w", padx=8,
+                                                        pady=(0, 8))
+
+        cactions = ttk.Frame(box)
+        cactions.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Button(cactions, text=self.tr("copy_btn"),
+                  command=self._cp_do_copy).pack(side="left")
+        ttk.Button(cactions, text=self.tr("copy_remember"),
+                  command=self._cp_remember).pack(side="left", padx=(8, 0))
+
+    def _cp_files_for(self, zone):
+        base = self.COPY_TEMPLATES[zone]
+        return glob.glob(os.path.join(self.cp_src_var.get().strip(), base + ".*"))
+
+    def _cp_build_zones(self):
+        for w in self.cp_zone_box.winfo_children():
+            w.destroy()
+        self.cp_zone_vars.clear()
+        for i, zone in enumerate(self.COPY_TEMPLATES):
+            exists = bool(self._cp_files_for(zone))
+            var = tk.BooleanVar(value=False)
+            self.cp_zone_vars[zone] = var
+            label = self.tr("copy_zone_label", z=zone) + f"  ({self.COPY_TEMPLATES[zone]})"
+            if not exists:
+                label += f"  — ⚠ {self.tr('copy_notfound')}"
+            ttk.Checkbutton(self.cp_zone_box, text=label, variable=var,
+                            state=("normal" if exists else "disabled")).grid(
+                row=i, column=0, sticky="w", pady=2)
+
+    def _cp_pick_source(self):
+        d = filedialog.askdirectory(title=self.tr("copy_source"),
+                                    initialdir=self.cp_src_var.get() or None)
+        if d:
+            self.cp_src_var.set(os.path.normpath(d))
+            self.app.source_dir = os.path.normpath(d)
+            self.app.save_settings()
+            self._cp_build_zones()
+
+    def _cp_pick_dest(self):
+        d = filedialog.askdirectory(title=self.tr("copy_target"),
+                                    initialdir=self.cp_dest_var.get() or None)
+        if d:
+            self.cp_dest_var.set(os.path.normpath(d))
+
+    def _cp_remember(self):
+        self.app.set_tool_config(self.COPY_TID,
+                                 {"dest": self.cp_dest_var.get().strip()})
+        messagebox.showinfo("GIS_BOX", self.tr("copy_saved"))
+
+    @staticmethod
+    def _cp_next_index(dest, base):
+        pat = re.compile(re.escape(base) + r"_(\d+)(?:\.|$)", re.IGNORECASE)
+        n = 0
+        try:
+            for f in os.listdir(dest):
+                m = pat.match(f)
+                if m:
+                    n = max(n, int(m.group(1)))
+        except OSError:
+            pass
+        return n + 1
+
+    def _cp_do_copy(self):
+        zones = [z for z, v in self.cp_zone_vars.items() if v.get()]
+        dest = self.cp_dest_var.get().strip()
+        if not zones:
+            messagebox.showwarning("GIS_BOX", self.tr("warn_copy_zone"))
+            return
+        if not dest:
+            messagebox.showwarning("GIS_BOX", self.tr("warn_copy_dest"))
+            return
+        if not os.path.isdir(dest):
+            try:
+                os.makedirs(dest, exist_ok=True)
+            except OSError as e:
+                messagebox.showerror(self.tr("err"), self.tr("copy_err_mkdir", e=e))
+                return
+
+        total = 0
+        created = []
+        for zone in zones:
+            files = self._cp_files_for(zone)
+            if not files:
+                continue
+            base = self.COPY_TEMPLATES[zone]
+            idx = self._cp_next_index(dest, base)
+            new_base = f"{base}_{idx}"
+            for src in files:
+                name = os.path.basename(src)
+                rest = name[len(base):]
+                dst = os.path.join(dest, new_base + rest)
+                try:
+                    shutil.copy2(src, dst)
+                    total += 1
+                except OSError as e:
+                    self.app.log(f"✗ {new_base}{rest}: {e}")
+            created.append(new_base)
+
+        msg = self.tr("copy_done", names=", ".join(created), n=total, dest=dest)
+        self.app.log("— " + msg)
+        messagebox.showinfo("GIS_BOX", msg)
 
     def save_state(self):
         st = self._state()
@@ -639,3 +826,4 @@ class LineIntersectTool(ZoneIntersectTool):
     tid = "line_intersect"
     CATALOG = LTR
     DEFAULT_NAME = "Line_Crossing"
+    SHOW_COPY_SECTION = False             # Gas_Pipe_ProtZone-სთან კავშირი არ აქვს

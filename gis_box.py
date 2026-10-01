@@ -435,6 +435,12 @@ class GisBoxApp(tk.Tk):
         """
         specs = []
         for cfg in TEMPLATE_SETS:
+            if cfg["id"] == "protzone_crossing":
+                # გადატანილია „დაცვის ზონის კვეთა“-ს ბოლოში, საკუთარ სექციად —
+                # ის ხელსაწყო ისედაც ქმნის ამ წერტილოვან გეომეტრიას, ამიტომ
+                # ცალკე sidebar-გვერდი ზედმეტი იყო. TEMPLATE_SETS-ში დარჩა
+                # მხოლოდ "ყველასთვის დამახსოვრების" config-loop-ის გამო.
+                continue
             specs.append({
                 "name_en": cfg["name_en"], "name_ka": cfg["name_ka"],
                 "factory": (lambda master, cfg=cfg: TemplateCopier(master, self, cfg)),
