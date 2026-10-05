@@ -8,6 +8,7 @@ pytest.importorskip("shapely")   # shapely-ის გარეშე გარ�
 from shapely.geometry import Polygon, LineString, MultiPoint, GeometryCollection
 from tools.zone_intersect_core import (
     _iter_points, _as_curve, crossing_points, collect_points, clip_areas,
+    crossing_angle, shallow_crossings,
 )
 
 
@@ -138,3 +139,34 @@ def test_clip_areas_handles_empty_inputs():
     assert res["cut"] is None
     assert res["parcel_area"] == pytest.approx(1.0)
     assert res["remainder_area"] == pytest.approx(1.0)
+
+
+# ---- crossing_angle / shallow_crossings ----
+
+def test_crossing_angle_perpendicular_is_90():
+    a = LineString([(0, -5), (0, 5)])
+    b = LineString([(-5, 0), (5, 0)])
+    assert crossing_angle((0, 0), [a], [b]) == pytest.approx(90.0)
+
+
+def test_crossing_angle_is_acute_regardless_of_direction():
+    a = LineString([(0, 0), (10, 0)])
+    b = LineString([(10, 0.8816), (0, -0.8816)])      # ~10° დახრილი (tan 10° = 0.1763), საპირისპირო მიმართულება
+    assert crossing_angle((5, 0), [a], [b]) == pytest.approx(10.0, abs=0.05)
+
+
+def test_shallow_crossings_flags_only_small_angles():
+    a = LineString([(0, 0), (100, 0)])
+    steep = LineString([(20, -10), (20, 10)])          # 90°
+    shallow = LineString([(0, -1.4), (100, 12.6)])     # ~8° → წერტილი (10, 0)
+    pts = [(20.0, 0.0), (10.0, 0.0)]
+    flagged = shallow_crossings([a], [steep, shallow], pts, threshold_deg=15)
+    assert [n for n, _ in flagged] == [2]
+    assert flagged[0][1] == pytest.approx(8.0, abs=0.2)
+
+
+def test_shallow_crossings_uses_polygon_boundaries():
+    poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    zone = Polygon([(5, -5), (15, -5), (15, 5), (5, 5)])
+    pts = collect_points([poly], [zone])
+    assert shallow_crossings([poly], [zone], pts) == []   # კვადრატების გადაკვეთა — 90°

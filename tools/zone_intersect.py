@@ -23,7 +23,9 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
-from tools.zone_intersect_core import collect_points, clip_areas
+from tools.zone_intersect_core import collect_points, clip_areas, shallow_crossings
+
+SHALLOW_ANGLE_DEG = 15.0     # ამ კუთხეზე ბრტყელი გადაკვეთები გაფრთხილებით აღინიშნება
 from tools.template_sets import get as get_template_set
 
 ALL_SENTINEL = "— all —"          # „ყველა ზონა“ მარკერი value-combo-ში
@@ -120,6 +122,14 @@ ZTR = {
                        "“Shp → coordinates”.",
                  "ka": "ნაკვეთის shapefile-ს CRS (.prj) არ აქვს; შედეგსაც არ "
                        "ექნება და UTM ზონა ხელით უნდა აირჩიო „Shp → კოორდინატებში“."},
+    "warn_shallow": {"en": "Shallow crossing (angle < {lim}°) at point(s) {nums}; "
+                           "smallest angle {deg}°. A 1 cm offset in either line "
+                           "moves the point ~{k} cm along it — make sure the "
+                           "exact intended line is selected.",
+                     "ka": "ბრტყელი გადაკვეთა (კუთხე < {lim}°) წერტილებზე {nums}; "
+                           "უმცირესი კუთხე {deg}°. ნებისმიერ ხაზში 1 სმ სხვაობა "
+                           "წერტილს ხაზის გასწვრივ ~{k} სმ-ით გადაწევს — "
+                           "დარწმუნდი, რომ ზუსტად სასურველი ხაზია არჩეული."},
     "reading_zone": {"en": "Reading zone attributes…", "ka": "იკითხება ზონის ატრიბუტები…"},
     "running":  {"en": "Computing intersection…", "ka": "მიმდინარეობს კვეთის გამოთვლა…"},
     "done":     {"en": "Done — {n} point(s). → {path}",
@@ -610,9 +620,11 @@ class ZoneIntersectTool(ToolFrame):
             zones = [g for g in zgdf.geometry if g is not None]
             pts = collect_points(parcels, zones)
             areas = clip_areas(parcels, zones)
+            shallow = shallow_crossings(parcels, zones, pts, SHALLOW_ANGLE_DEG)
 
             self.msg_queue.put(("result", {
                 "points": pts, "crs": target_crs, "out": out, "areas": areas,
+                "shallow": shallow,
             }))
         except ImportError as e:
             self.msg_queue.put(("dep_err", str(e)))
@@ -724,7 +736,21 @@ class ZoneIntersectTool(ToolFrame):
         self.app.log("— " + msg)
         if res["crs"] is None:
             self.app.log("  ⚠ " + self.tr("crs_warn"))
+        shallow = res.get("shallow") or []
+        if shallow:
+            warn = self._shallow_message(shallow)
+            self.app.log("  ⚠ " + warn)
+            msg = msg + "\n\n⚠ " + warn
         messagebox.showinfo("GIS_BOX", msg)
+
+    def _shallow_message(self, shallow):
+        """გაფრთხილების ტექსტი: წერტილების ნომრები + უმცირესი კუთხე + გაძლიერება."""
+        import math
+        nums = ", ".join(str(n) for n, _a in shallow)
+        amin = min(a for _n, a in shallow)
+        k = 1.0 / math.tan(math.radians(max(amin, 0.5)))
+        return self.tr("warn_shallow", nums=nums, deg=round(amin, 1),
+                       lim=int(SHALLOW_ANGLE_DEG), k=round(k, 1))
 
     # ---- „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შენახვა ----
     def _save_cut_geometry(self):

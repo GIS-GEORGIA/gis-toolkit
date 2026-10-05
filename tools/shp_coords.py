@@ -129,6 +129,10 @@ RTR = {
                   "ka": "ამ shapefile-ს კოორდინატთა სისტემა (.prj) არ აქვს. "
                         "კოორდინატები გამოყენებული იქნება როგორც არის — UTM ზონა {z}. "
                         "გავაგრძელო?"},
+    "int_round_q": {"en": "“Integer” rounds every coordinate to the whole metre "
+                          "(up to ~0.7 m shift per point). Export anyway?",
+                    "ka": "„მთელი (integer)“ ყველა კოორდინატს მეტრამდე ამრგვალებს "
+                          "(წერტილზე ~0.7 მ-მდე გადახრა). მაინც გავაგრძელო?"},
     "no_crs_warn":{"en": "no CRS (.prj) — coordinates used as UTM zone {z}",
                    "ka": "CRS (.prj) არ არის — კოორდინატები UTM ზონა {z}-ად"},
     "no_points": {"en": "The shapefile has no points.",
@@ -680,6 +684,8 @@ class ShpCoordsTool(ToolFrame):
             messagebox.showwarning("GIS_BOX", self.tr("no_points"))
             return
 
+        if not self._confirm_int_rounding():
+            return
         base = os.path.splitext(os.path.basename(shp))[0]
         path = filedialog.asksaveasfilename(
             title=self.tr("save_title"), defaultextension=".xlsx",
@@ -723,6 +729,13 @@ class ShpCoordsTool(ToolFrame):
         msg = self.tr("done", n=len(points), path=path)
         self.app.log("— " + msg)
         messagebox.showinfo("GIS_BOX", msg)
+
+    def _confirm_int_rounding(self):
+        """„მთელი (integer)“-ის არჩევისას — დადასტურება: კოორდინატები მეტრამდე
+        მრგვალდება (გადახრა ~0.7 მ-მდე). ათწილადზე — ჩუმად True."""
+        if self.vtype_var.get() != "int":
+            return True
+        return messagebox.askyesno("GIS_BOX", self.tr("int_round_q"))
 
     def _current_settings(self):
         """მიმდინარე UI პარამეტრები: (template, angle_on, angle_all, vtype)."""
@@ -855,6 +868,8 @@ class ShpCoordsTool(ToolFrame):
     def _batch(self):
         if not self._shp_map:
             messagebox.showinfo("GIS_BOX", self.tr("no_shp"))
+            return
+        if not self._confirm_int_rounding():
             return
         outdir = filedialog.askdirectory(title=self.tr("batch_dir"))
         if not outdir:

@@ -105,6 +105,69 @@ def _corridor_axis(zones):
     return dx, dy
 
 
+def _line_parts(geom):
+    """გეომეტრიის (საზღვრის/ხაზის) შემადგენელი კოორდინატთა მიმდევრობები."""
+    if geom is None or geom.is_empty:
+        return []
+    gt = geom.geom_type
+    if gt in ("LineString", "LinearRing"):
+        return [list(geom.coords)]
+    if hasattr(geom, "geoms"):
+        out = []
+        for g in geom.geoms:
+            out.extend(_line_parts(g))
+        return out
+    return []
+
+
+def _nearest_direction(curves, x, y):
+    """(x, y)-თან უახლოესი სეგმენტის მიმართულება (dx, dy) მოცემულ ხაზებს შორის."""
+    best, best_d2 = None, None
+    for geom in curves:
+        for part in _line_parts(_as_curve(geom)):
+            for (x1, y1), (x2, y2) in zip(part, part[1:]):
+                sx, sy = x2 - x1, y2 - y1
+                L2 = sx * sx + sy * sy
+                if L2 == 0:
+                    continue
+                t = max(0.0, min(1.0, ((x - x1) * sx + (y - y1) * sy) / L2))
+                px, py = x1 + t * sx, y1 + t * sy
+                d2 = (x - px) ** 2 + (y - py) ** 2
+                if best_d2 is None or d2 < best_d2:
+                    best_d2, best = d2, (sx, sy)
+    return best
+
+
+def crossing_angle(pt, curves_a, curves_b):
+    """ორი ხაზის მახვილი გადაკვეთის კუთხე (გრადუსი, 0–90) წერტილში ``pt``.
+
+    თითო მხარეს ვიღებთ წერტილთან უახლოეს სეგმენტს. ``None`` — თუ ვერ დადგინდა."""
+    import math
+    da = _nearest_direction(curves_a, pt[0], pt[1])
+    db = _nearest_direction(curves_b, pt[0], pt[1])
+    if da is None or db is None:
+        return None
+    ang = abs(math.degrees(math.atan2(da[0] * db[1] - da[1] * db[0],
+                                      da[0] * db[0] + da[1] * db[1])))
+    return min(ang, 180.0 - ang)
+
+
+def shallow_crossings(parcels, zones, points, threshold_deg=15.0):
+    """წერტილები, სადაც გადაკვეთის კუთხე ``threshold_deg``-ზე ნაკლებია.
+
+    აბრუნებს ``[(ნომერი_1დან, კუთხე°), …]``-ს ``points``-ის რიგის მიხედვით.
+    ასეთ ადგილას ხაზში პატარა გვერდითი სხვაობაც (ჯვარედინი ხაზის სხვა ვერსია,
+    ციფრული ცდომილება) წერტილს ხაზის გასწვრივ ~1/tan(კუთხე)-ჯერ გადაწევს."""
+    parcels = [p for p in parcels if p is not None and not p.is_empty]
+    zones = [z for z in zones if z is not None and not z.is_empty]
+    out = []
+    for i, pt in enumerate(points, start=1):
+        ang = crossing_angle(pt, parcels, zones)
+        if ang is not None and ang < threshold_deg:
+            out.append((i, ang))
+    return out
+
+
 def clip_areas(parcels, zones):
     """ნაკვეთის საერთო ფართი, ზონასთან გადაკვეთილი („მოჭრილი“) ნაწილი და დარჩენილი ნაწილი.
 
