@@ -29,14 +29,14 @@ def _iter_points(geom, out):
     elif gt in ("LineString", "LinearRing"):
         cs = list(geom.coords)
         if cs:
-            out.append(cs[0])
-            out.append(cs[-1])
+            out.append((cs[0][0], cs[0][1]))             # Z-ს ვაგდებთ
+            out.append((cs[-1][0], cs[-1][1]))
     elif gt == "MultiLineString":
         for g in geom.geoms:
             cs = list(g.coords)
             if cs:
-                out.append(cs[0])
-                out.append(cs[-1])
+                out.append((cs[0][0], cs[0][1]))
+                out.append((cs[-1][0], cs[-1][1]))
     elif gt == "GeometryCollection":
         for g in geom.geoms:
             _iter_points(g, out)
@@ -111,7 +111,7 @@ def _line_parts(geom):
         return []
     gt = geom.geom_type
     if gt in ("LineString", "LinearRing"):
-        return [list(geom.coords)]
+        return [[(c[0], c[1]) for c in geom.coords]]     # Z (3D ხაზი) იგნორდება
     if hasattr(geom, "geoms"):
         out = []
         for g in geom.geoms:

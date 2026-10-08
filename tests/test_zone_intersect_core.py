@@ -170,3 +170,27 @@ def test_shallow_crossings_uses_polygon_boundaries():
     zone = Polygon([(5, -5), (15, -5), (15, 5), (5, 5)])
     pts = collect_points([poly], [zone])
     assert shallow_crossings([poly], [zone], pts) == []   # კვადრატების გადაკვეთა — 90°
+
+
+# ---- 3D (Z) ხაზები — რეალური მონაცემი (saguramo_qutaisi500.shp) Z-იანია ----
+
+def test_crossing_angle_works_with_z_lines():
+    a = LineString([(0, -5, 10), (0, 5, 12)])
+    b = LineString([(-5, 0, 0), (5, 0, 0)])
+    assert crossing_angle((0, 0), [a], [b]) == pytest.approx(90.0)
+
+
+def test_collect_points_and_shallow_with_z_lines():
+    a = LineString([(0, 0, 5), (100, 0, 5)])
+    b = LineString([(0, -1.4), (100, 12.6)])                # ~8°, 2D ხაზი Z-იანს კვეთს
+    pts = collect_points([a], [b])
+    assert len(pts) == 1 and len(pts[0]) == 2
+    flagged = shallow_crossings([a], [b], pts, threshold_deg=15)
+    assert [n for n, _ in flagged] == [1]
+
+
+def test_collinear_overlap_endpoints_are_2d_for_z_lines():
+    a = LineString([(0, 0, 1), (10, 0, 1)])
+    b = LineString([(5, 0, 2), (15, 0, 2)])                 # გადაფარვა x∈[5,10]
+    pts = collect_points([a], [b])
+    assert all(len(p) == 2 for p in pts) and len(pts) == 2
