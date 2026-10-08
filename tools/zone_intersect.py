@@ -43,6 +43,9 @@ DEFAULT_OUT_NAME = "Gas_Pipe_ProtZone_Crossing"
 # <base><UTM ზონა>_<N> სქემით (მომხმარებელი შეცვლის დიალოგში დაწკაპებისას).
 # მაგ. Parcel_clipped_part38_1
 DEFAULT_CUT_NAME = "Parcel_clipped_part"
+# ნაკვეთის „დარჩენილი“ (ნაკვეთი − ზონა) ნაწილის შეთავაზებული სახელი — იგივე სქემით,
+# მაგ. Parcel_remaining_part38_1
+DEFAULT_REMAIN_NAME = "Parcel_remaining_part"
 
 
 def _auto_zone_field(fields):
@@ -91,6 +94,8 @@ ZTR = {
     "btn_coords": {"en": "Open in Shp → coordinates",
                    "ka": "Shp → კოორდინატებში გახსნა"},
     "btn_excel": {"en": "Excel table", "ka": "Excel ცხრილი"},
+    "btn_rem": {"en": "Save remaining part…",
+                "ka": "დარჩენილი ნაწილის შენახვა…"},
     "btn_cut": {"en": "Save cut-out geometry…",
                 "ka": "მოჭრილი გეომეტრიის შენახვა…"},
 
@@ -115,6 +120,20 @@ ZTR = {
                      "ka": "აირჩიე გამომავალი საქაღალდე მოჭრილი გეომეტრიისთვის"},
     "ask_cut_name": {"en": "Output name for the cut-out geometry:",
                      "ka": "მოჭრილი გეომეტრიის გამომავალი სახელი:"},
+    "warn_norem": {"en": "Nothing remains of the parcel outside the zone.",
+                   "ka": "ზონის გარეთ ნაკვეთის დარჩენილი ნაწილი არ არის."},
+    "pick_rem_out": {"en": "Choose an output folder for the remaining part",
+                     "ka": "აირჩიე გამომავალი საქაღალდე დარჩენილი ნაწილისთვის"},
+    "ask_rem_name": {"en": "Output name for the remaining part:",
+                     "ka": "დარჩენილი ნაწილის გამომავალი სახელი:"},
+    "rem_saved": {"en": "Remaining part saved — {area} m²  → {path}",
+                  "ka": "დარჩენილი ნაწილი შენახულია — {area} მ²  → {path}"},
+    "tip_rem": {"en": "Save what is left of the parcel after cutting out the "
+                      "zone overlap (parcel − zone) as its own polygon shapefile, "
+                      "in a folder you choose.",
+                "ka": "ნაკვეთის იმ ნაწილის შენახვა ცალკე პოლიგონურ shapefile-ად, "
+                      "რომელიც ზონის მოჭრის შემდეგ დარჩა (ნაკვეთი − ზონა), შენ "
+                      "მიერ არჩეულ საქაღალდეში."},
     "cut_saved": {"en": "Cut-out geometry saved — {area} m²  → {path}",
                  "ka": "მოჭრილი გეომეტრია შენახულია — {area} მ²  → {path}"},
     "crs_warn": {"en": "The parcel shapefile has no CRS (.prj); output will have "
@@ -225,6 +244,7 @@ class ZoneIntersectTool(ToolFrame):
         self._last_crs = None
         self._last_areas = None
         self._last_cut_geom = None
+        self._last_remainder_geom = None
         self._copy_section_refs = []  # StringVar/BooleanVar-ების GC-სგან დაცვა
 
         ttk.Label(self, text=self.tr("heading"),
@@ -304,6 +324,11 @@ class ZoneIntersectTool(ToolFrame):
                                   command=self._save_cut_geometry, state="disabled")
         self.cut_btn.pack(side="left", padx=(8, 0))
         add_tip(self.cut_btn, self.tr("tip_cut"))
+        self.rem_btn = ttk.Button(brow, text=self.tr("btn_rem"),
+                                  command=self._save_remainder_geometry,
+                                  state="disabled")
+        self.rem_btn.pack(side="left", padx=(8, 0))
+        add_tip(self.rem_btn, self.tr("tip_rem"))
 
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill="x", pady=(6, 2))
@@ -711,6 +736,11 @@ class ZoneIntersectTool(ToolFrame):
         self._last_cut_geom = (cut if cut is not None and not cut.is_empty
                                and cut.area > 0 else None)
         self.cut_btn.configure(state="normal" if self._last_cut_geom else "disabled")
+        rem = areas.get("remainder")
+        self._last_remainder_geom = (rem if rem is not None and not rem.is_empty
+                                     and rem.area > 0 else None)
+        self.rem_btn.configure(
+            state="normal" if self._last_remainder_geom is not None else "disabled")
         if not pts:
             self.status.set(self.tr("warn_none"))
             messagebox.showinfo("GIS_BOX", self.tr("warn_none"))
@@ -752,22 +782,32 @@ class ZoneIntersectTool(ToolFrame):
         return self.tr("warn_shallow", nums=nums, deg=round(amin, 1),
                        lim=int(SHALLOW_ANGLE_DEG), k=round(k, 1))
 
-    # ---- „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შენახვა ----
+    # ---- „მოჭრილი“ (ნაკვეთი ∩ ზონა) და „დარჩენილი“ (ნაკვეთი − ზონა) შენახვა ----
     def _save_cut_geometry(self):
-        if self._last_cut_geom is None or self._last_cut_geom.is_empty:
-            messagebox.showinfo("GIS_BOX", self.tr("warn_nocut"))
+        self._save_piece(self._last_cut_geom, DEFAULT_CUT_NAME, "warn_nocut",
+                         "pick_cut_out", "ask_cut_name", "cut_saved")
+
+    def _save_remainder_geometry(self):
+        self._save_piece(self._last_remainder_geom, DEFAULT_REMAIN_NAME,
+                         "warn_norem", "pick_rem_out", "ask_rem_name", "rem_saved")
+
+    def _save_piece(self, geom, default_base, warn_key, pick_key, ask_key,
+                    saved_key):
+        """პოლიგონური ნაწილის ცალკე shapefile-ად შენახვა: საქაღალდის არჩევა,
+        სახელის შეთავაზება (<base><ზონა>_<N>) და დადასტურება/შეცვლა."""
+        if geom is None or geom.is_empty:
+            messagebox.showinfo("GIS_BOX", self.tr(warn_key))
             return
         out = filedialog.askdirectory(initialdir=self.out_var.get() or None,
-                                      title=self.tr("pick_cut_out"))
+                                      title=self.tr(pick_key))
         if not out:
             return
         znum = self._zone_num_from_crs(self._last_crs)
-        base = DEFAULT_CUT_NAME + znum
+        base = default_base + znum
         suggested = os.path.splitext(
             os.path.basename(self._next_free_path(out, base)))[0]
         name = simpledialog.askstring(
-            "GIS_BOX", self.tr("ask_cut_name"), initialvalue=suggested,
-            parent=self)
+            "GIS_BOX", self.tr(ask_key), initialvalue=suggested, parent=self)
         if not name or not name.strip():
             return
         chosen = self._sanitize(name.strip())
@@ -778,10 +818,10 @@ class ZoneIntersectTool(ToolFrame):
             # რომ "_1_1"-ის მსგავსი ორმაგი სუფიქსი არ დაერთოს.
             stem = re.sub(r"_\d+$", "", chosen) or chosen
             out_path = self._next_free_path(out, stem)
-        geom = self._last_cut_geom
         try:
             import geopandas as gpd
             parts = list(geom.geoms) if hasattr(geom, "geoms") else [geom]
+            parts = [g for g in parts if g.area > 0]          # ხაზ/წერტილ-ნარჩენები არა
             rows = [{"N": i, "Area_m2": round(g.area, 5)}
                     for i, g in enumerate(parts, start=1)]
             gdf = gpd.GeoDataFrame(rows, geometry=parts, crs=self._last_crs)
@@ -789,7 +829,7 @@ class ZoneIntersectTool(ToolFrame):
         except Exception as e:                  # noqa: BLE001
             messagebox.showerror(self.tr("err"), str(e))
             return
-        msg = self.tr("cut_saved", area=round(geom.area, 3), path=out_path)
+        msg = self.tr(saved_key, area=round(geom.area, 3), path=out_path)
         self.app.log("— " + msg)
         messagebox.showinfo("GIS_BOX", msg)
 
