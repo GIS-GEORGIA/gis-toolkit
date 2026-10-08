@@ -2,11 +2,12 @@
 """ხაზოვანი შრიდან ბუფერების (დაცვის ზონების) აგება — სუფთა ლოგიკა.
 
 სამი ტიპი, თითოეულში ცალკე ბუფერი ცალკე shapefile-ად. გამომავალი სახელი:
-``<სახელი>_<N>.shp`` — N არის პირველი თავისუფალი ინდექსი (1, 2, 3…) ამ
-სახელისთვის სამიზნე საქაღალდეში.
+``<სახელი>_<N>.shp`` — N არის ამ სახელის ბოლო არსებული ინდექსის შემდეგი
+(1, 2, 3…) სამიზნე საქაღალდეში.
 
-ბუფერი მეტრებშია, ამიტომ შრე უნდა იყოს მეტრულ (პროექციულ) CRS-ში; გეოგრაფიულს
-UTM-ზე გადავიყვანთ (ცენტროიდის გრძედის მიხედვით). აქ tkinter არაა.
+ბუფერი მეტრებშია და გამოიყენება მხოლოდ UTM 37N/38N (EPSG:32637/32638); სხვა CRS-ს
+(მათ შორის გეოგრაფიულ 4326-ს) მომხმარებლის თანხმობით გადავიყვანთ შრის
+მდებარეობის შესაბამის ზონაში. აქ tkinter არაა.
 UI: ``tools.line_buffer``.
 """
 
@@ -49,27 +50,53 @@ def output_path(folder, base):
     return os.path.join(folder, "{}_{}.shp".format(base, next_index(folder, base)))
 
 
-def metric_crs(crs, lon_lat_center):
-    """მეტრულ CRS-ში მუშაობისთვის: აბრუნებს (crs, გადასაყვანია_თუ_არა).
+ALLOWED_EPSG = (32637, 32638)        # ვიყენებთ მხოლოდ WGS84 UTM 37N / 38N
 
-    - პროექციული CRS მეტრებით → უცვლელი;
-    - გეოგრაფიული ან არამეტრული → WGS84 UTM (ცენტროიდის გრძედის ზონა);
-    - CRS არ აქვს → ``ValueError``."""
+
+def zone_epsg_for_lon(lon):
+    """EPSG ზონის გრძედით: 42°E-მდე — 32637, მის შემდეგ — 32638."""
+    return 32637 if lon < 42.0 else 32638
+
+
+def _epsg_of(c):
+    """pyproj CRS → EPSG კოდი; ESRI-სტილის WKT-ს (EPSG-ის გარეშე) ცნობს UTM ზონით."""
+    epsg = c.to_epsg()
+    if epsg is None and c.is_projected:
+        try:
+            if c.geodetic_crs.to_epsg() == 4326 and c.utm_zone in ("37N", "38N"):
+                epsg = 32600 + int(c.utm_zone[:2])
+        except Exception:                          # noqa: BLE001
+            pass
+    return epsg
+
+
+def layer_center_lonlat(crs, bounds):
+    """შრის ბოუნდინგ-ბოქსის ცენტრი (გრძედი, განედი), WGS84-ში."""
+    import pyproj
+    minx, miny, maxx, maxy = bounds
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    c = pyproj.CRS.from_user_input(crs)
+    if c.is_geographic:
+        return cx, cy
+    return pyproj.Transformer.from_crs(c, 4326, always_xy=True).transform(cx, cy)
+
+
+def plan_crs(crs, bounds):
+    """რომელ CRS-ში ვაგებთ ბუფერს: აბრუნებს ``(epsg, საჭიროა_კონვერტაცია)``.
+
+    - 32637 / 32638 → უცვლელი, კონვერტაცია არ სჭირდება;
+    - სხვა ნებისმიერი (მათ შორის გეოგრაფიული 4326) → შრის მდებარეობის (გრძედის)
+      შესაბამისი ზონა, კონვერტაცია საჭიროა — UI მომხმარებელს ჯერ ეკითხება;
+    - CRS არ აქვს → ``ValueError`` (ზონას ვერ ვხვდებით, ვერაფერს ვივარაუდებთ)."""
     import pyproj
     if crs is None:
         raise ValueError("no_crs")
     c = pyproj.CRS.from_user_input(crs)
-    if c.is_projected:
-        try:
-            unit = (c.axis_info[0].unit_name or "").lower()
-        except Exception:                          # noqa: BLE001
-            unit = ""
-        if unit in ("metre", "meter"):
-            return c, False
-    lon, _lat = lon_lat_center
-    zone = int((lon + 180.0) // 6.0) + 1
-    zone = min(max(zone, 1), 60)
-    return pyproj.CRS.from_epsg(32600 + zone), True
+    epsg = _epsg_of(c)
+    if epsg in ALLOWED_EPSG:
+        return epsg, False
+    lon, _lat = layer_center_lonlat(c, bounds)
+    return zone_epsg_for_lon(lon), True
 
 
 def build_buffer(geoms, distance):

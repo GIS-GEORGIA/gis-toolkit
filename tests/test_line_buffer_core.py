@@ -6,7 +6,7 @@ import math
 import pytest
 
 from tools.line_buffer_core import (
-    BUFFER_TYPES, next_index, output_path, metric_crs, build_buffer,
+    BUFFER_TYPES, next_index, output_path, plan_crs, zone_epsg_for_lon, build_buffer,
 )
 
 
@@ -44,24 +44,41 @@ def test_next_index_missing_folder_is_1(tmp_path):
     assert next_index(str(tmp_path / "nope"), "x") == 1
 
 
-def test_metric_crs_keeps_projected_metre_crs():
+@pytest.mark.parametrize("epsg", [32637, 32638])
+def test_plan_crs_keeps_allowed_utm_without_conversion(epsg):
     pytest.importorskip("pyproj")
-    crs, changed = metric_crs("EPSG:32638", (44.0, 42.0))
-    assert crs.to_epsg() == 32638 and changed is False
+    assert plan_crs("EPSG:{}".format(epsg), (500000, 4600000, 500100, 4600100)) == (epsg, False)
 
 
-def test_metric_crs_geographic_goes_to_utm_by_longitude():
+def test_plan_crs_geographic_4326_offers_zone_by_location():
     pytest.importorskip("pyproj")
-    crs, changed = metric_crs("EPSG:4326", (44.8, 41.7))      # თბილისი → ზონა 38
-    assert crs.to_epsg() == 32638 and changed is True
-    crs, _ = metric_crs("EPSG:4326", (41.6, 41.6))             # ბათუმი (36–42°E) → ზონა 37
-    assert crs.to_epsg() == 32637
+    assert plan_crs("EPSG:4326", (44.7, 41.6, 44.9, 41.8)) == (32638, True)     # თბილისი
+    assert plan_crs("EPSG:4326", (41.5, 41.5, 41.7, 41.7)) == (32637, True)     # ბათუმი
 
 
-def test_metric_crs_without_crs_raises():
+def test_plan_crs_other_projected_crs_also_converts():
+    pytest.importorskip("pyproj")
+    # UTM 39N (32639) დასაშვებ ორში არაა → კონვერტაცია მდებარეობის ზონაში
+    epsg, convert = plan_crs("EPSG:32639", (300000, 4650000, 300100, 4650100))
+    assert convert is True and epsg in (32637, 32638)
+
+
+def test_plan_crs_recognises_esri_wkt_utm_zone():
+    pyproj = pytest.importorskip("pyproj")
+    wkt = pyproj.CRS.from_epsg(32638).to_wkt()
+    esri = pyproj.CRS.from_user_input(wkt).to_wkt(version="WKT1_ESRI")
+    assert plan_crs(esri, (500000, 4600000, 500100, 4600100)) == (32638, False)
+
+
+def test_plan_crs_without_crs_raises():
     pytest.importorskip("pyproj")
     with pytest.raises(ValueError):
-        metric_crs(None, (44.0, 42.0))
+        plan_crs(None, (0, 0, 1, 1))
+
+
+def test_zone_boundary_is_42_east():
+    assert zone_epsg_for_lon(41.99) == 32637
+    assert zone_epsg_for_lon(42.0) == 32638
 
 
 def test_build_buffer_straight_line_area():

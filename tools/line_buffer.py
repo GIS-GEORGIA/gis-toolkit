@@ -17,7 +17,7 @@ from tkinter import ttk, filedialog, messagebox
 from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
-from tools.line_buffer_core import BUFFER_TYPES, build_buffer, metric_crs, output_path
+from tools.line_buffer_core import BUFFER_TYPES, build_buffer, output_path, plan_crs
 
 LBR = {
     "heading": {"en": "Buffers from a line layer",
@@ -52,14 +52,22 @@ LBR = {
                  "ka": "აირჩიე გამომავალი საქაღალდე."},
     "warn_zone": {"en": "Tick at least one buffer.",
                   "ka": "მონიშნე მინიმუმ ერთი ბუფერი."},
-    "no_crs": {"en": "The shapefile has no CRS (.prj) — buffer distances in metres "
-                     "cannot be trusted. Add a projection first.",
-               "ka": "shapefile-ს CRS (.prj) არ აქვს — მეტრებში ბუფერი ვერ "
-                     "გამოითვლება სანდოდ. ჯერ პროექცია მიანიჭე."},
+    "no_crs": {"en": "The shapefile has no CRS (.prj) — the UTM zone cannot be "
+                     "determined. Assign EPSG:32637 or EPSG:32638 first.",
+               "ka": "shapefile-ს CRS (.prj) არ აქვს — UTM ზონა ვერ დგინდება. "
+                     "ჯერ მიანიჭე EPSG:32637 ან EPSG:32638."},
+    "convert_q": {"en": "The layer is in {cur}. Buffers are built only in EPSG:32637 / "
+                        "EPSG:32638.\n\nConvert it to EPSG:{epsg} (UTM zone {zone}, by the "
+                        "layer's location) and build the buffers there? The source "
+                        "file is not changed.",
+                  "ka": "შრე არის {cur}-ში. ბუფერები იგება მხოლოდ EPSG:32637 / "
+                        "EPSG:32638-ში.\n\nგადავიყვანო EPSG:{epsg}-ში (UTM ზონა {zone}, "
+                        "შრის მდებარეობის მიხედვით) და იქ ავაგო ბუფერები? "
+                        "საწყისი ფაილი არ შეიცვლება."},
     "no_geom": {"en": "The layer has no usable line geometry.",
                 "ka": "შრეში გამოსადეგი ხაზოვანი გეომეტრია არ არის."},
-    "reproj": {"en": "Layer is not in a metric CRS — reprojected to {crs} for the buffers.",
-               "ka": "შრე მეტრულ CRS-ში არ არის — ბუფერებისთვის გადაყვანილია {crs}-ში."},
+    "reproj": {"en": "Converted from {cur} to EPSG:{epsg} for the buffers.",
+               "ka": "{cur}-დან გადაყვანილია EPSG:{epsg}-ში ბუფერებისთვის."},
     "running": {"en": "Building buffers…", "ka": "ბუფერები იგება…"},
     "wrote": {"en": "✓ {d} m → {path}", "ka": "✓ {d} მ → {path}"},
     "done": {"en": "Done — {n} buffer(s) written to {out}",
@@ -239,47 +247,68 @@ class LineBufferTool(ToolFrame):
         if not zones:
             messagebox.showwarning("GIS_BOX", self.tr("warn_zone"))
             return
+        target = self._plan_target(shp)
+        if target is None:
+            return
         self.busy = True
         self.build_btn.configure(state="disabled", text=self.tr("btn_busy"))
         self.progress.start(12)
         self.status.set(self.tr("running"))
-        threading.Thread(target=self._worker, args=(shp, out, zones),
+        threading.Thread(target=self._worker, args=(shp, out, zones, target),
                          daemon=True).start()
 
-    def _worker(self, shp, out, zones):
+    def _plan_target(self, shp):
+        """გამომავალი EPSG (32637/32638) ან None (გაუქმდა/შეუძლებელია).
+
+        32637/32638-ში მყოფ შრეს არაფერს ვეკითხებით; სხვას (მათ შორის 4326)
+        ვთავაზობთ კონვერტაციას შრის მდებარეობის შესაბამის ზონაში."""
+        try:
+            import pyogrio
+            info = pyogrio.read_info(shp)
+            crs = info.get("crs")
+            epsg, convert = plan_crs(crs, info["total_bounds"])
+        except ValueError:
+            messagebox.showwarning("GIS_BOX", self.tr("no_crs"))
+            return None
+        except ImportError as e:
+            messagebox.showerror(self.tr("err"), self.tr("dep_err", e=e))
+            return None
+        except Exception as e:                     # noqa: BLE001
+            messagebox.showerror(self.tr("err"), str(e))
+            return None
+        if convert:
+            import pyproj
+            c = pyproj.CRS.from_user_input(crs)
+            cur = "EPSG:{}".format(c.to_epsg()) if c.to_epsg() else c.name
+            if not messagebox.askyesno("GIS_BOX", self.tr(
+                    "convert_q", cur=cur, epsg=epsg, zone=epsg - 32600)):
+                return None
+        return epsg
+
+    def _worker(self, shp, out, zones, target_epsg):
         try:
             import geopandas as gpd
-            import pyproj
 
             gdf = gpd.read_file(shp)
+            if gdf.crs is None:
+                self.msg_queue.put(("warn", self.tr("no_crs")))
+                return
+            src_epsg = gdf.crs.to_epsg()
+            if src_epsg != target_epsg:
+                cur = "EPSG:{}".format(src_epsg) if src_epsg else "CRS"
+                gdf = gdf.to_crs(epsg=target_epsg)
+                self.msg_queue.put(("log", self.tr("reproj", cur=cur, epsg=target_epsg)))
             geoms = [g for g in gdf.geometry if g is not None and not g.is_empty]
             if not geoms:
                 self.msg_queue.put(("warn", self.tr("no_geom")))
                 return
-            if gdf.crs is None:
-                self.msg_queue.put(("warn", self.tr("no_crs")))
-                return
-
-            minx, miny, maxx, maxy = gdf.total_bounds
-            cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
-            if pyproj.CRS.from_user_input(gdf.crs).is_geographic:
-                lonlat = (cx, cy)
-            else:
-                lonlat = pyproj.Transformer.from_crs(
-                    gdf.crs, 4326, always_xy=True).transform(cx, cy)
-            target, changed = metric_crs(gdf.crs, lonlat)
-            if changed:
-                gdf = gdf.to_crs(target)
-                geoms = [g for g in gdf.geometry if g is not None and not g.is_empty]
-                self.msg_queue.put(("log", self.tr(
-                    "reproj", crs="EPSG:{}".format(target.to_epsg()))))
 
             written = []
             for dist, name in zones:
                 geom = build_buffer(geoms, dist)
                 path = output_path(out, name)
                 gpd.GeoDataFrame([{"Zone": name, "Dist_m": dist}],
-                                 geometry=[geom], crs=target).to_file(
+                                 geometry=[geom], crs=gdf.crs).to_file(
                     path, driver="ESRI Shapefile", encoding="utf-8")
                 written.append((dist, path))
                 self.msg_queue.put(("log", self.tr("wrote", d=dist, path=path)))
