@@ -26,6 +26,7 @@ pyogrio = None                     # lazy; დანიშნულება —
 from tools.base import ToolFrame
 from tools.platform_utils import MONO_FONT, default_desktop
 from tools.tooltip import add_tip
+from tools.shp_analysis import ShpAnalysisSection
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +324,10 @@ class ParcelSearchTool(ToolFrame):
         self.progress = ttk.Progressbar(self, mode="determinate")
         self.progress.pack(fill="x", padx=8)
 
+        # --- დამატებით: შეიპების ანალიზი საქაღალდეებში (შედეგი — ქვემოთ, საერთო ლოგში) ---
+        self.analysis = ShpAnalysisSection(self)
+        self.analysis.build(self, initial("an_root", ""), initial("an_top", "5"))
+
         # --- შედეგები / ლოგი ---
         res = ttk.LabelFrame(self, text=tr("sec_result"))
         res.pack(fill="both", expand=True, **pad)
@@ -351,6 +356,8 @@ class ParcelSearchTool(ToolFrame):
         if hasattr(self, "shp_var"):
             st["shp"] = self.shp_var.get()
             st["gpkg"] = self.gpkg_var.get()
+        if hasattr(self, "analysis"):
+            self.analysis.save_state(st)
 
     def _remember(self):
         """მიმდინარე ბაზის პარამეტრების მუდმივად შენახვა (git-ignored ფაილში).
@@ -366,6 +373,8 @@ class ParcelSearchTool(ToolFrame):
             "field": self.field_var.get().strip(),
             "out": self.out_var.get().strip(),
             "databases": self._databases,
+            "an_root": self.analysis.root_var.get().strip(),
+            "an_top": self.analysis.top_var.get().strip(),
         })
         self.save_state()
         messagebox.showinfo(self.tr("saved_title"), self.tr("cfg_saved"))
@@ -571,6 +580,9 @@ class ParcelSearchTool(ToolFrame):
     # ---- ძებნის გაშვება ----
     def _start_search(self):
         if self.searching:
+            return
+        if self.analysis.running:
+            messagebox.showinfo(self.tr("info"), self.analysis.tr("busy_analysis"))
             return
         gdb = self.gdb_var.get().strip()
         layer = self._layer_code(self.layer_var.get().strip())   # ნამდვილი შრის სახელი
