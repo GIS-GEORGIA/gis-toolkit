@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """geom_collect_core — სუფთა დამხმარეების ტესტები (GDAL-ის გარეშე)."""
 
+import datetime
 import os
 
 from tools.geom_collect_core import (
-    classify_geom_type, iter_geometry_files, GEOM_EXT,
+    dated_output_path, classify_geom_type, iter_geometry_files, GEOM_EXT,
     normalize_exts, VECTOR_FORMATS, DIR_DATASETS,
 )
 
@@ -96,3 +97,29 @@ def test_dir_datasets_and_catalog():
     assert any("Shapefile" in x for x in labels)
     assert any("GeoPackage" in x for x in labels)
     assert any("Geodatabase" in x for x in labels)
+
+
+# ---- dated_output_path ----
+def test_dated_output_path_appends_ddmmyy():
+    d = datetime.date(2026, 11, 4)
+    assert dated_output_path("collected_geometry.gpkg", d) == "collected_geometry_041126.gpkg"
+    p = os.path.join("C:\\", "out", "collected_geometry.gpkg")
+    assert dated_output_path(p, d) == os.path.join("C:\\", "out", "collected_geometry_041126.gpkg")
+
+
+def test_dated_output_path_replaces_an_existing_date_instead_of_doubling():
+    d = datetime.date(2026, 11, 4)
+    assert dated_output_path("collected_geometry_031126.gpkg", d) == "collected_geometry_041126.gpkg"
+    assert dated_output_path("collected_geometry_041126.gpkg", d) == "collected_geometry_041126.gpkg"
+
+
+def test_dated_output_path_keeps_non_date_digit_suffix():
+    d = datetime.date(2026, 11, 4)
+    # 999999 რეალური თარიღი არაა → სახელის ნაწილად რჩება
+    assert dated_output_path("layer_999999.gpkg", d) == "layer_999999_041126.gpkg"
+    assert dated_output_path("layer_12345.gpkg", d) == "layer_12345_041126.gpkg"
+
+
+def test_dated_output_path_defaults_to_today():
+    today = datetime.date.today().strftime("%d%m%y")
+    assert dated_output_path("x.gpkg").endswith("_{}.gpkg".format(today))

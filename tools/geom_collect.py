@@ -20,7 +20,7 @@ from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT, open_path, default_desktop
 from tools.tooltip import add_tip
 from tools.geom_collect_core import (
-    iter_geometry_files, collect_to_geopackage,
+    iter_geometry_files, collect_to_geopackage, dated_output_path,
     VECTOR_FORMATS, GEOM_EXT, normalize_exts,
 )
 
@@ -108,8 +108,12 @@ CTR = {
     # tooltip-ები
     "tip_src":    {"en": "Folder to scan for SHP/DXF/DWG (recursively).",
                    "ka": "საქაღალდე SHP/DXF/DWG-ის მოსაძებნად (ხე მთლიანად)."},
-    "tip_out":    {"en": "Where to write the merged GeoPackage.",
-                   "ka": "სად ჩაიწეროს გაერთიანებული GeoPackage."},
+    "tip_out":    {"en": "Where to write the merged GeoPackage. The collection date "
+                         "(DDMMYY) is added to the file name automatically, e.g. "
+                         "collected_geometry_041126.gpkg.",
+                   "ka": "სად ჩაიწეროს გაერთიანებული GeoPackage. ფაილის სახელს "
+                         "შეგროვების თარიღი (დდთთწწ) ავტომატურად ემატება, მაგ. "
+                         "collected_geometry_041126.gpkg."},
     "tip_crs":    {"en": "Coordinate system for the output. “auto” uses the first "
                          "CRS found; files without a CRS are assumed to match it.",
                    "ka": "გამომავალი კოორდინატთა სისტემა. „ავტომატური“ იყენებს "
@@ -336,7 +340,8 @@ class GeomCollectTool(ToolFrame):
         v = self._validate()
         if not v:
             return
-        source, out, epsg, exts = v
+        source, base_out, epsg, exts = v
+        out = dated_output_path(base_out)        # …_DDMMYY.gpkg — შეგროვების თარიღით
         files = iter_geometry_files(source, exts, self.recursive_var.get())
         if not files:
             messagebox.showinfo("GIS_BOX", self.tr("count_none"))
@@ -345,7 +350,7 @@ class GeomCollectTool(ToolFrame):
                                    self.tr("confirm_m", n=len(files), out=out)):
             return
         self.app.set_tool_config(self.tid,
-                                 {"source": source, "out": out,
+                                 {"source": source, "out": base_out,
                                   "exts": list(exts)})
 
         self.busy = True

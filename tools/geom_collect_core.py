@@ -10,6 +10,7 @@
 წაკითხვა დამოკიდებულია GDAL-ის CAD დრაივერზე; თუ არაა, ფაილი გამოტოვდება.
 """
 
+import datetime
 import os
 
 # ნაგულისხმევად მონიშნული ფორმატები (თავდაპირველი მოთხოვნა)
@@ -171,6 +172,24 @@ def _bucketize(gdf, src_file, src_layer):
         )
         result[bucket] = out
     return result
+
+
+def dated_output_path(path, today=None):
+    """გამომავალ სახელს თარიღს უმატებს: ``collected_geometry.gpkg`` →
+    ``collected_geometry_041126.gpkg`` (DDMMYY — შეგროვების დღე).
+
+    თუ სახელი უკვე თარიღით მთავრდება (``…_031126``) — ის იცვლება დღევანდელით და
+    არ ორმაგდება; მხოლოდ რეალური თარიღი (დღე/თვე/წელი) ითვლება — უბრალო 6 ციფრი არა."""
+    day = (today or datetime.date.today()).strftime("%d%m%y")
+    stem, ext = os.path.splitext(path)
+    head, sep, tail = stem.rpartition("_")
+    if sep and len(tail) == 6 and tail.isdigit():
+        try:
+            datetime.datetime.strptime(tail, "%d%m%y")
+            stem = head
+        except ValueError:
+            pass
+    return "{}_{}{}".format(stem, day, ext)
 
 
 def collect_to_geopackage(files, out_path, target_epsg=None,
