@@ -1003,7 +1003,6 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
                             log.detail("{} src OBJECTID {} no={} -> already in the all-years database (skipped)".format(
                                 kind, it["src_oid"], it["no"]))
                             continue
-                        existing.add(key)
                 vals = {}
                 for col, v in it["values"].items():
                     if col.upper() in have:
@@ -1088,7 +1087,7 @@ def merge_databases(paths, out_path, log=None, progress=None, cancel=None, templ
         out = Plan(paths[0], out_path, 0)
         out.sources = paths
         out.per_source = []                       # [(path, {kind: (found, taken, dup)})]
-        seen = {k: set() for k in KINDS}
+        seen = {k: set() for k in KINDS}                # (ნომერი, წელი) წინა ბაზებიდან
         lps = {}
         for kind in KINDS:
             nl = new_info.by_kind(kind)[0]
@@ -1141,6 +1140,7 @@ def merge_databases(paths, out_path, log=None, progress=None, cancel=None, templ
                     col_index = {c_: i + 1 for i, (c_, _d) in enumerate(copy_pairs)}
                     shape_i = col_index.get(find_field([c_ for c_, _ in copy_pairs], "SHAPE") or "SHAPE")
                     taken = dup = 0
+                    fresh = set()                   # ამ ბაზის გასაღებები — შიგა გამეორებები არ იკარგება
                     for r in rows:
                         if cancel():
                             raise TransferError("cancelled")
@@ -1164,11 +1164,12 @@ def merge_databases(paths, out_path, log=None, progress=None, cancel=None, templ
                                 kind, os.path.basename(pth), oid, no_raw, err))
                             continue
                         if no is not None and yk is not None:
-                            seen[kind].add((no, yk))
+                            fresh.add((no, yk))
                         lp.to_insert.append(item)
                         taken += 1
                         log.detail("{} {} OBJECTID {} no={} date={} -> WILL MERGE".format(
                             kind, os.path.basename(pth), oid, no_raw, _dt(dt)))
+                    seen[kind] |= fresh
                     stats[kind] = (len(rows), taken, dup)
                     log("  {}: {} record(s) | to merge {} | duplicates skipped {}".format(
                         kind.upper(), len(rows), taken, dup))

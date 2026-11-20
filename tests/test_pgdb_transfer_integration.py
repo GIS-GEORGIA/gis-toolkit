@@ -737,3 +737,29 @@ def test_common_all_years_database_is_created_then_appended(dbs, tmp_path):
     assert c.export_inserted(p26, per_year).totals()["inserted"] == 3
     with pytest.raises(c.TransferError):
         c.export_inserted(p26, per_year)
+
+
+def test_common_database_keeps_repeated_numbers_inside_a_year(dbs, tmp_path):
+    """წყაროში ერთი ნომერი ერთ წელს რამდენჯერმეა — მიმღებში ყველა ჩაიწერა, საერთო ბაზაშიც ყველა უნდა მოხვდეს."""
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "R", "date": d(2025, 1, 1)}, {"no": "R", "date": d(2025, 6, 6)},
+                           {"no": "R", "date": d(2025, 9, 9)}, {"no": "S", "date": d(2025, 2, 2)}])
+    common = c.all_years_output_path(dst, str(tmp_path))
+    plan = c.analyze(src, dst, mapping(), 2025)
+    c.execute(plan, backup=False)
+    assert plan.totals()["inserted"] == 4
+    r = c.export_inserted(plan, common, append=True)
+    assert r.totals()["inserted"] == 4 and fx.counts(common)["point"] == (4, 4)
+    # ხელახალი ექსპორტი არაფერს ამატებს
+    assert c.export_inserted(plan, common, append=True).totals()["inserted"] == 0
+
+
+def test_merge_keeps_repeated_numbers_inside_one_source(tmp_path):
+    a = fx.make_db(tmp_path, "m25.mdb")
+    b = fx.make_db(tmp_path, "m26.mdb")
+    fx.seed(a, "point", [{"no": "R", "date": d(2025, 1, 1)}, {"no": "R", "date": d(2025, 2, 2)}])
+    fx.seed(b, "point", [{"no": "R", "date": d(2025, 3, 3)}, {"no": "R", "date": d(2026, 1, 1)}])
+    out = str(tmp_path / "m_all.mdb")
+    plan = c.merge_databases([a, b], out)
+    # a: 2 ჩანაწერი (შიგა გამეორება არ იკარგება); b: 2025-ის R უკვე a-დან არის → გამოტოვება; 2026 — ახალი
+    assert fx.counts(out)["point"] == (3, 3) and plan.totals()["duplicates"] == 1
