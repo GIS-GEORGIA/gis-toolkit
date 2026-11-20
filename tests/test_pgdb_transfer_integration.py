@@ -684,3 +684,27 @@ def test_transferred_records_copy_into_separate_database(dbs, tmp_path):
     c.execute(plan2, backup=False)
     out2 = str(tmp_path / "none.mdb")
     assert c.export_inserted(plan2, out2) is None and not os.path.exists(out2)
+
+
+# ---- ყველა წლის გაერთიანება ერთ ბაზაში ----
+def test_merge_all_years_into_one_database(tmp_path):
+    a = fx.make_db(tmp_path, "y2025.mdb")
+    b = fx.make_db(tmp_path, "y2026.mdb")
+    fx.seed(a, "point", [{"no": "A1", "date": d(2025, 1, 1)}, {"no": "A2", "date": d(2025, 2, 2)}])
+    fx.seed(a, "polygon", [{"no": "PA", "date": d(2025, 3, 3)}])
+    fx.seed(b, "point", [{"no": "A1", "date": d(2026, 1, 1)}, {"no": "B1", "date": d(2026, 2, 2)},
+                         {"no": "A2", "date": d(2025, 2, 2)}])           # A2/2025 — დუბლიკატი
+    fx.seed(b, "line", [{"no": "LB", "date": d(2026, 4, 4)}])
+    ha, hb = sha(a), sha(b)
+    out = str(tmp_path / "all.mdb")
+    plan = c.merge_databases([a, b], out)
+    cnt = fx.counts(out)
+    assert cnt["point"] == (4, 4) and cnt["line"] == (1, 1) and cnt["polygon"] == (1, 1)
+    assert plan.totals()["duplicates"] == 1 and plan.totals()["inserted"] == 6
+    assert sha(a) == ha and sha(b) == hb                                   # წყაროები უცვლელია
+    assert fx.fetch_all(out, "point") is not None
+    with pytest.raises(c.TransferError):
+        c.merge_databases([a, b], out)                                     # გადაწერა არ ხდება
+    empty1, empty2 = fx.make_db(tmp_path, "e1.mdb"), fx.make_db(tmp_path, "e2.mdb")
+    o2 = str(tmp_path / "none.mdb")
+    assert c.merge_databases([empty1, empty2], o2) is None and not os.path.exists(o2)

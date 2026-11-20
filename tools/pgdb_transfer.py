@@ -72,6 +72,22 @@ DTR = {
                     "ka": "გადატანილი ჩანაწერები ცალკე ახალ ბაზაშიც შენახულია ({n}):\n   {p}"},
     "sum_copyset_err": {"en": "Transferred records were NOT saved into a separate database: {e}",
                         "ka": "გადატანილი ჩანაწერები ცალკე ბაზაში ვერ შეინახა: {e}"},
+    "btn_merge": {"en": "Merge all years into ONE database…", "ka": "ყველა წლის ერთ ბაზაში გაერთიანება…"},
+    "tip_merge": {"en": "Choose the per-year databases (e.g. the *_transferred_<year>_*.mdb files) - all their records are "
+                        "combined into ONE brand-new database (points, lines, polygons). Records with the same werilis_no "
+                        "and the same year are not repeated. The chosen databases are only read.",
+                  "ka": "აირჩიე წელი-წლობით გადატანილი ბაზები (მაგ. *_transferred_<წელი>_*.mdb) — მათი ყველა ჩანაწერი "
+                        "გაერთიანდება ერთ სრულიად ახალ ბაზაში (წერტილი, ხაზი, პოლიგონი). იგივე werilis_no + იგივე წელი "
+                        "არ განმეორდება. არჩეული ბაზები მხოლოდ იკითხება."},
+    "merge_pick": {"en": "Choose the databases to merge (hold Ctrl for several)",
+                   "ka": "აირჩიე გასაერთიანებელი ბაზები (რამდენიმეს — Ctrl)"},
+    "merge_few": {"en": "Choose at least two databases.", "ka": "აირჩიე მინიმუმ ორი ბაზა."},
+    "merge_ask": {"en": "{n} database(s) will be merged into ONE new database:\n{p}\n\nThe chosen databases are only read. Continue?",
+                  "ka": "{n} ბაზა გაერთიანდება ერთ ახალ ბაზაში:\n{p}\n\nარჩეული ბაზები მხოლოდ იკითხება. გავაგრძელო?"},
+    "merge_nothing": {"en": "Nothing to merge - no records found.", "ka": "გასაერთიანებელი არაფერია — ჩანაწერი ვერ მოიძებნა."},
+    "merge_done": {"en": "Merged into one database: {n} record(s)", "ka": "გაერთიანდა ერთ ბაზაში: {n} ჩანაწერი"},
+    "merge_line": {"en": "{k}: found {f}, duplicates skipped {u}, merged {i}, errors {e}",
+                   "ka": "{k}: ნაპოვნი {f}, დუბლიკატი გამოტოვდა {u}, გაერთიანდა {i}, შეცდომა {e}"},
     "undated": {"en": "Save records WITHOUT a date into a separate NEW database",
                 "ka": "თარიღის გარეშე ჩანაწერების ცალკე ახალ ბაზაში შენახვა"},
     "tip_undated": {"en": "Records whose date (TariRI) is empty cannot belong to any year. They are copied (all attributes, "
@@ -92,6 +108,7 @@ DTR = {
     "sum_undated_err": {"en": "Records without a date were NOT saved: {e}", "ka": "თარიღის გარეშე ჩანაწერები ვერ შეინახა: {e}"},
     "code_no_template": {"en": "The empty-database template is missing from the installation.\n\n{d}",
                          "ka": "ცარიელი ბაზის შაბლონი ინსტალაციაში არ არის.\n\n{d}"},
+    "code_same_db": {"en": "The output database is one of the chosen databases.", "ka": "გამომავალი ბაზა არჩეულ ბაზებს შორისაა."},
     "code_exists": {"en": "The output file already exists (it is never overwritten).\n\n{d}",
                     "ka": "გამომავალი ფაილი უკვე არსებობს (არასდროს გადაიწერება).\n\n{d}"},
     "st_undated": {"en": "Saving records without a date…", "ka": "თარიღის გარეშე ჩანაწერების შენახვა…"},
@@ -314,6 +331,9 @@ class PgdbTransferTool(ToolFrame):
         add_tip(self.start_btn, self.tr("tip_start"))
         self.cancel_btn = ttk.Button(brow, text=self.tr("btn_cancel"), command=self._cancel, state="disabled")
         self.cancel_btn.pack(side="left", padx=(8, 0))
+        self.merge_btn = ttk.Button(brow, text=self.tr("btn_merge"), command=self._merge_years)
+        self.merge_btn.pack(side="left", padx=(8, 0))
+        add_tip(self.merge_btn, self.tr("tip_merge"))
         self.log_btn = ttk.Button(brow, text=self.tr("btn_log"), command=self._open_log, state="disabled")
         self.log_btn.pack(side="right")
 
@@ -425,6 +445,7 @@ class PgdbTransferTool(ToolFrame):
         self.start_btn.configure(state="disabled" if busy else "normal",
                                  text=self.tr("btn_busy") if busy else self.tr("btn_start"))
         self.check_btn.configure(state="disabled" if busy else "normal")
+        self.merge_btn.configure(state="disabled" if busy else "normal")
         self.cancel_btn.configure(state="normal" if busy else "disabled")
 
     # ------------------------------------------------------------ ვალიდაცია
@@ -755,6 +776,78 @@ class PgdbTransferTool(ToolFrame):
         finally:
             log.close()
 
+    def _merge_years(self):
+        if self.busy:
+            return
+        dst = self.dst_var.get().strip()
+        paths = filedialog.askopenfilenames(
+            title=self.tr("merge_pick"), initialdir=os.path.dirname(dst) if dst else None,
+            filetypes=[("Personal Geodatabase / Access", "*.mdb"), ("All files", "*.*")])
+        paths = [os.path.normpath(x) for x in paths]
+        if len(paths) < 2:
+            if paths:
+                messagebox.showwarning("GIS_BOX", self.tr("merge_few"))
+            return
+        out = core.merged_output_path(paths[0])
+        if not messagebox.askyesno(self.tr("conf_title"), self.tr("merge_ask", n=len(paths), p=out)):
+            return
+        self.cancel_event.clear()
+        self._set_text(self.summary, "")
+        self._set_text(self.errlog, "")
+        self._log_path = core.default_log_path(out, self.app_data_dir(), year="merge", src_path=paths[0])
+        self._set_busy(True)
+        self.progress.configure(value=0)
+        self.status.set(self.tr("st_writing"))
+        threading.Thread(target=self._merge_worker, args=(paths, out), daemon=True).start()
+
+    def _merge_worker(self, paths, out):
+        log = self._make_log()
+        t0 = time.time()
+        try:
+            log.raw("=" * 78)
+            log.raw("MERGE DATABASES — all years into one")
+            log.raw("=" * 78)
+            for x in paths:
+                log("input: {}".format(x))
+            log("output: {}".format(out))
+            plan = core.merge_databases(paths, out, log=log,
+                                        progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
+                                        cancel=self.cancel_event.is_set)
+            if plan is not None:
+                log.raw("")
+                for pth, stats in plan.per_source:
+                    log.raw("{}: ".format(os.path.basename(pth)) + " | ".join(
+                        "{} {}/{}/{}".format(k.upper(), *stats[k]) for k in core.KINDS if k in stats)
+                        + "   (found/merged/duplicates)")
+                log.raw("duration: {:.1f} s".format(time.time() - t0))
+            self.msg_queue.put(("merged", plan))
+        except core.TransferError as e:
+            log("{}: {}".format(e.code, e.detail), "ERROR")
+            self.msg_queue.put(("error", e))
+        except Exception as e:                     # noqa: BLE001
+            log(str(e), "ERROR")
+            self.msg_queue.put(("error", core.friendly_error(e)))
+        finally:
+            log.close()
+
+    def _on_merged(self, plan):
+        self._set_busy(False)
+        self.progress.configure(value=0)
+        self.log_btn.configure(state="normal")
+        if plan is None:
+            self.status.set(self.tr("ready"))
+            messagebox.showinfo("GIS_BOX", self.tr("merge_nothing"))
+            return
+        t = plan.totals()
+        lines = [self.tr("merge_done", n=t["inserted"]), "=" * 44]
+        for lp in plan.layers:
+            lines.append(self.tr("merge_line", k=KIND_LABEL[lp.kind][self.app.lang], f=lp.found, u=lp.duplicates,
+                                 i=lp.inserted, e=len(lp.errors)))
+        lines += ["-" * 44, plan.dst_path, self.tr("log_path", p=self._log_path)]
+        self._set_text(self.summary, "\n".join(lines))
+        self.status.set(self.tr("merge_done", n=t["inserted"]))
+        messagebox.showinfo("GIS_BOX", "\n".join(lines))
+
     def _close_out(self, plan, outcome, written=False):
         """ლოგის დასრულება: საბოლოო შეჯამება + ჩანაწერების CSV + ისტორიის ინდექსი (ფაილებს მხოლოდ ემატება)."""
         if not self._log_path:
@@ -882,6 +975,8 @@ class PgdbTransferTool(ToolFrame):
                     self._on_analysed(payload)
                 elif kind == "written":
                     self._on_written(payload)
+                elif kind == "merged":
+                    self._on_merged(payload)
                 elif kind == "error":
                     self._pending_start = False
                     self._set_busy(False)

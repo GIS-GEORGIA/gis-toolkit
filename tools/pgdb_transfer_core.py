@@ -990,6 +990,167 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
                 pass
 
 
+def merged_output_path(first_path, folder=None, stamp=None):
+    """გაერთიანებული ბაზის ფაილი: ``<სახელი>_ALL_YEARS_YYYYMMDD_HHMMSS.mdb``."""
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = os.path.splitext(os.path.basename(first_path))[0]
+    import re
+    stem = re.sub(r"_(transferred|no_date)_.*$", "", stem).replace(" ", "_")
+    return os.path.join(folder or os.path.dirname(os.path.abspath(first_path)),
+                        "{}_ALL_YEARS_{}.mdb".format(stem, stamp))
+
+
+def merge_databases(paths, out_path, log=None, progress=None, cancel=None, template=None):
+    """რამდენიმე Personal Geodatabase-ის (მაგ. წელი-წლობით გადატანილი ბაზების) ჩანაწერები → **ერთი ახალი** ბაზა.
+
+    * ფენები ემთხვევა გეომეტრიის ტიპით (წერტილი/ხაზი/პოლიგონი); ახალი ბაზა — ცარიელი შაბლონიდან;
+    * CRS = პირველი ბაზის CRS, დანარჩენი საჭიროებისას გადაიყვანება (გაურკვევლობისას ფენა ბლოკდება);
+    * დუბლიკატი: იგივე ``werilis_no`` + იგივე წელი უკვე გაერთიანებულშია → გამოტოვდება (ლოგში);
+    * წყაროები მხოლოდ იკითხება; ჩაწერა — ერთი ტრანზაქცია + ვერიფიკაცია. აბრუნებს ``Plan``-ს ან ``None``-ს."""
+    log = log or TransferLog()
+    cancel = cancel or (lambda: False)
+    tpl = template or template_path()
+    if not os.path.isfile(tpl):
+        raise TransferError("no_template", tpl)
+    if os.path.exists(out_path):
+        raise TransferError("exists", out_path)
+    paths = [os.path.abspath(x) for x in paths]
+    if any(same_file(x, out_path) for x in paths):
+        raise TransferError("same_db")
+    shutil.copyfile(tpl, out_path)
+    created = True
+    try:
+        infos = []
+        for pth in paths:
+            c0 = connect(pth, "ro")
+            try:
+                infos.append(inspect_db(pth, c0))
+            finally:
+                c0.close()
+        # ახალი ბაზის CRS = პირველი ბაზის შესაბამისი ფენის CRS
+        new_info = inspect_db(out_path)
+        wc = connect(out_path, "excl")
+        wcur = wc.cursor()
+        for kind in KINDS:
+            for info in infos:
+                cand = [l for l in info.by_kind(kind) if l.srtext]
+                if cand:
+                    nl = new_info.by_kind(kind)[0]
+                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (cand[0].srtext, nl.srid))
+                    break
+        wc.commit()
+        wc.close()
+        new_info = inspect_db(out_path)
+        out = Plan(paths[0], out_path, 0)
+        out.sources = paths
+        out.per_source = []                       # [(path, {kind: (found, taken, dup)})]
+        seen = {k: set() for k in KINDS}
+        lps = {}
+        for kind in KINDS:
+            nl = new_info.by_kind(kind)[0]
+            lps[kind] = LayerPlan(kind, "merged", nl.name)
+            out.layers.append(lps[kind])
+        for pth, info in zip(paths, infos):
+            if cancel():
+                raise TransferError("cancelled")
+            log("source database: {}".format(pth))
+            stats = {}
+            sc = connect(pth, "ro")
+            try:
+                cur = sc.cursor()
+                for kind in KINDS:
+                    lp = lps[kind]
+                    nl = new_info.by_kind(kind)[0]
+                    cands = info.by_kind(kind)
+                    if not cands:
+                        log("  {}: no such layer".format(kind.upper()))
+                        continue
+                    sl = cands[0]
+                    if sl.has_z or sl.has_m:
+                        log("  {}: Z/M geometry not supported - skipped".format(kind.upper()), "ERROR")
+                        lp.errors.append((0, pth, "has_zm"))
+                        continue
+                    rel = crs_relation(sl.srtext, nl.srtext)
+                    transform = None
+                    if rel == "unknown":
+                        log("  {}: coordinate system cannot be matched - skipped".format(kind.upper()), "ERROR")
+                        lp.errors.append((0, pth, "crs_unknown"))
+                        continue
+                    if rel == "reproject":
+                        transform = make_transformer(sl.srtext, nl.srtext)
+                        lp.reprojected = True
+                        log("  {}: reprojected to the merged database CRS".format(kind.upper()), "WARN")
+                    fplan = plan_fields(sl.fields, nl.fields)
+                    dsrc = find_field(sl.field_names(), DATE_FIELD)
+                    key_src = find_field(sl.field_names(), KEY_FIELD)
+                    if not fplan.ok or not dsrc:
+                        log("  {}: schema incompatible - skipped".format(kind.upper()), "ERROR")
+                        lp.errors.append((0, pth, "schema"))
+                        continue
+                    for f in fplan.unmatched_src:
+                        if f not in lp.unmatched_fields:
+                            lp.unmatched_fields.append(f)
+                    copy_pairs = fplan.copy
+                    sel = ", ".join("[{}]".format(c_) for c_, _d in copy_pairs)
+                    rows = cur.execute("SELECT OBJECTID, {sel} FROM [{t}] ORDER BY OBJECTID".format(
+                        sel=sel, t=sl.name)).fetchall()
+                    col_index = {c_: i + 1 for i, (c_, _d) in enumerate(copy_pairs)}
+                    shape_i = col_index.get(find_field([c_ for c_, _ in copy_pairs], "SHAPE") or "SHAPE")
+                    taken = dup = 0
+                    for r in rows:
+                        if cancel():
+                            raise TransferError("cancelled")
+                        oid = r[0]
+                        no_raw = r[col_index[key_src]] if key_src else None
+                        dt = r[col_index[dsrc]]
+                        no = normalize_no(no_raw)
+                        yk = dt.year if hasattr(dt, "year") else None
+                        lp.src_years[yk] = lp.src_years.get(yk, 0) + 1
+                        lp.found += 1
+                        if no is not None and yk is not None and (no, yk) in seen[kind]:
+                            dup += 1
+                            lp.duplicates += 1
+                            log.detail("{} {} OBJECTID {} no={} year={} -> SKIPPED (already in merged set)".format(
+                                kind, os.path.basename(pth), oid, no_raw, yk))
+                            continue
+                        item, err = _make_item(r, oid, no, no_raw, col_index, copy_pairs, shape_i, kind, transform, fplan)
+                        if err:
+                            lp.errors.append((oid, no_raw, "{}: {}".format(os.path.basename(pth), err)))
+                            log.detail("{} {} OBJECTID {} no={} -> NOT MERGED ({})".format(
+                                kind, os.path.basename(pth), oid, no_raw, err))
+                            continue
+                        if no is not None and yk is not None:
+                            seen[kind].add((no, yk))
+                        lp.to_insert.append(item)
+                        taken += 1
+                        log.detail("{} {} OBJECTID {} no={} date={} -> WILL MERGE".format(
+                            kind, os.path.basename(pth), oid, no_raw, _dt(dt)))
+                    stats[kind] = (len(rows), taken, dup)
+                    log("  {}: {} record(s) | to merge {} | duplicates skipped {}".format(
+                        kind.upper(), len(rows), taken, dup))
+                    if progress:
+                        progress(kind, len(rows), max(1, len(rows)))
+            finally:
+                sc.close()
+            out.per_source.append((pth, stats))
+        if not out.totals()["to_insert"]:
+            log("nothing to merge - new database not created")
+            return None
+        execute(out, log=log, backup=False, progress=progress, cancel=cancel)
+        created = False
+        for lp in out.layers:
+            if lp.to_insert_count or lp.found:
+                log("{}: merged {} | by year: {}".format(lp.kind.upper(), lp.inserted, _years_text(lp.src_years)))
+        log("merged database: {}".format(out_path))
+        return out
+    finally:
+        if created:
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+
+
 def check_writable(path):
     """მიმღების ჩაწერისთვის მზადობა: ექსკლუზიურად გახსნა-დახურვა (არაფერს წერს).
 
