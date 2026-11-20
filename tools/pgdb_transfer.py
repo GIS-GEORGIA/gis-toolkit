@@ -58,8 +58,26 @@ DTR = {
     "backup": {"en": "Back up the destination before writing", "ka": "ჩაწერამდე მიმღების სარეზერვო ასლის შექმნა"},
     "tip_backup": {"en": "Copies the destination .mdb next to it (…_backup_DATE.mdb) before anything is written.",
                    "ka": "ჩაწერამდე მიმღები .mdb-ის ასლს ქმნის გვერდით (…_backup_თარიღი.mdb)."},
-    "copyset": {"en": "Also save the transferred records into a separate NEW database",
-                "ka": "გადატანილი ჩანაწერების დამატებით ცალკე ახალ ბაზაში შენახვა"},
+    "copyset": {"en": "Also save the transferred records into a separate NEW database (one per run/year)",
+                "ka": "გადატანილი ჩანაწერების დამატებით ცალკე ახალ ბაზაში შენახვა (გაშვება/წელი — ცალკე ბაზა)"},
+    "copyall": {"en": "Also add the transferred records to ONE common database (all years together)",
+                "ka": "გადატანილი ჩანაწერების დამატებით ერთ საერთო ბაზაშიც ჩაწერა (ყველა წელი ერთად)"},
+    "tip_copyall": {"en": "The records written into the destination are also added to ONE fixed database "
+                          "(<destination>_transferred_ALL_YEARS.mdb next to the destination). It is created on the first run; "
+                          "later runs/years are APPENDED to it (existing records are never changed or deleted; the same "
+                          "werilis_no + the same year is not repeated).",
+                    "ka": "მიმღებში ჩაწერილი ჩანაწერები დამატებით ემატება ერთ ფიქსირებულ ბაზას "
+                          "(<მიმღები>_transferred_ALL_YEARS.mdb, მიმღების გვერდით). პირველ გაშვებაზე იქმნება, შემდეგ "
+                          "გაშვებებზე/წლებზე ემატება (არსებული ჩანაწერები არასდროს იცვლება/იშლება; იგივე werilis_no + იგივე "
+                          "წელი არ მეორდება)."},
+    "conf_copyall": {"en": "\nThe transferred records will ALSO be added to the common all-years database:\n{p}",
+                     "ka": "\nგადატანილი ჩანაწერები დამატებით ჩაიწერება საერთო (ყველა წლის) ბაზაშიც:\n{p}"},
+    "sum_copyall": {"en": "Added to the common all-years database ({n}):\n   {p}",
+                    "ka": "საერთო (ყველა წლის) ბაზაში დაემატა ({n}):\n   {p}"},
+    "sum_copyall_err": {"en": "NOT added to the common all-years database: {e}",
+                        "ka": "საერთო (ყველა წლის) ბაზაში ვერ დაემატა: {e}"},
+    "code_crs_mismatch": {"en": "The common database has a different coordinate system than the destination.\n\n{d}",
+                          "ka": "საერთო ბაზის კოორდინატთა სისტემა მიმღებისას არ ემთხვევა.\n\n{d}"},
     "tip_copyset": {"en": "After a successful transfer, exactly the records that were written into the destination are also "
                           "copied (all attributes, exact geometry) into a brand-new Personal Geodatabase next to the "
                           "destination - handy for review or sending. The destination itself is written as usual.",
@@ -278,6 +296,7 @@ class PgdbTransferTool(ToolFrame):
         self._pending_start = False
         self._undated_path = None
         self._copyset_path = None
+        self._copyall_path = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
@@ -311,6 +330,11 @@ class PgdbTransferTool(ToolFrame):
         self.copyset_var = tk.BooleanVar(value=st.get("copyset", saved.get("copyset", False)))
         add_tip(ttk.Checkbutton(row3, text=self.tr("copyset"), variable=self.copyset_var),
                 self.tr("tip_copyset")).pack(side="left")
+        row4 = ttk.Frame(opts)
+        row4.pack(fill="x", padx=8, pady=(0, 6))
+        self.copyall_var = tk.BooleanVar(value=st.get("copyall", saved.get("copyall", False)))
+        add_tip(ttk.Checkbutton(row4, text=self.tr("copyall"), variable=self.copyall_var),
+                self.tr("tip_copyall")).pack(side="left")
         row2 = ttk.Frame(opts)
         row2.pack(fill="x", padx=8, pady=(0, 6))
         self.undated_var = tk.BooleanVar(value=st.get("undated", saved.get("undated", True)))
@@ -384,6 +408,7 @@ class PgdbTransferTool(ToolFrame):
         st["year"], st["backup"] = self.year_var.get(), self.backup_var.get()
         st["undated"] = self.undated_var.get()
         st["copyset"] = self.copyset_var.get()
+        st["copyall"] = self.copyall_var.get()
 
     def _pick(self, var):
         cur = var.get().strip()
@@ -632,8 +657,8 @@ class PgdbTransferTool(ToolFrame):
             log("destination: {}".format(dst))
             log("period:      {0}-01-01 00:00:00 .. {0}-12-31 23:59:59".format(year))
             log("layer mapping: " + "; ".join("{}: {} -> {}".format(k.upper(), a, b) for k, (a, b) in mapping.items()))
-            log("options: backup={} | undated-export={} | transferred-copy={}".format(
-                self.backup_var.get(), self.undated_var.get(), self.copyset_var.get()))
+            log("options: backup={} | undated-export={} | transferred-copy={} | all-years-db={}".format(
+                self.backup_var.get(), self.undated_var.get(), self.copyset_var.get(), self.copyall_var.get()))
             log("log file: {}".format(self._log_path))
             plan = core.analyze(src, dst, mapping, year, log=log,
                                 progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
@@ -714,6 +739,9 @@ class PgdbTransferTool(ToolFrame):
                               if self.copyset_var.get() else None)
         if self._copyset_path:
             text += "\n" + self.tr("conf_copyset", p=self._copyset_path)
+        self._copyall_path = (core.all_years_output_path(plan.dst_path) if self.copyall_var.get() else None)
+        if self._copyall_path:
+            text += "\n" + self.tr("conf_copyall", p=self._copyall_path)
         text += "\n" + self.tr("conf_ask", n=todo)
         if not messagebox.askyesno(self.tr("conf_title"), text):
             self._close_out(plan, "declined by user at confirmation (analysis only, nothing written)")
@@ -736,6 +764,18 @@ class PgdbTransferTool(ToolFrame):
                 core.execute(plan, log=log, backup=backup, progress=progress, cancel=self.cancel_event.is_set)
             plan.undated_plan, plan.undated_error = None, None
             plan.copyset_plan, plan.copyset_error = None, None
+            plan.copyall_plan, plan.copyall_error = None, None
+            if not skip_main and self._copyall_path:
+                try:
+                    log("--- transferred records -> common all-years database ---")
+                    plan.copyall_plan = core.export_inserted(plan, self._copyall_path, log=log, progress=progress,
+                                                             cancel=self.cancel_event.is_set, append=True)
+                except core.TransferError as e:
+                    plan.copyall_error = e
+                    log("{}: {}".format(e.code, e.detail), "ERROR")
+                except Exception as e:                 # noqa: BLE001
+                    plan.copyall_error = core.friendly_error(e)
+                    log(str(e), "ERROR")
             if not skip_main and self._copyset_path:
                 try:
                     log("--- transferred records -> separate new database ---")
@@ -879,6 +919,11 @@ class PgdbTransferTool(ToolFrame):
         up = getattr(plan, "undated_plan", None)
         if up:
             msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
+        ca = getattr(plan, "copyall_plan", None)
+        if ca:
+            msg += "\n\n" + self.tr("sum_copyall", n=ca.totals()["inserted"], p=ca.dst_path)
+        if getattr(plan, "copyall_error", None):
+            msg += "\n\n" + self.tr("sum_copyall_err", e=self._msg(plan.copyall_error))
         cp = getattr(plan, "copyset_plan", None)
         if cp:
             msg += "\n\n" + self.tr("sum_copyset", n=cp.totals()["inserted"], p=cp.dst_path)
@@ -916,6 +961,11 @@ class PgdbTransferTool(ToolFrame):
                              e=t["errors"], b=t["bad_dates"], t=fmt_duration(time.time() - plan.started)))
         if getattr(plan, "backup_path", None):
             lines.append(self.tr("sum_backup", p=plan.backup_path))
+        ca = getattr(plan, "copyall_plan", None)
+        if ca:
+            lines.append(self.tr("sum_copyall", n=ca.totals()["inserted"], p=ca.dst_path))
+        elif getattr(plan, "copyall_error", None):
+            lines.append(self.tr("sum_copyall_err", e=self._msg(plan.copyall_error)))
         cp = getattr(plan, "copyset_plan", None)
         if cp:
             lines.append(self.tr("sum_copyset", n=cp.totals()["inserted"], p=cp.dst_path))
@@ -937,7 +987,8 @@ class PgdbTransferTool(ToolFrame):
         self.app.set_tool_config(self.tid, {"src": self.src_var.get().strip(), "dst": self.dst_var.get().strip(),
                                             "year": self.year_var.get().strip(), "backup": bool(self.backup_var.get()),
                                             "undated": bool(self.undated_var.get()),
-                                            "copyset": bool(self.copyset_var.get())})
+                                            "copyset": bool(self.copyset_var.get()),
+                                            "copyall": bool(self.copyall_var.get())})
 
     def _cancel(self):
         if self.busy:

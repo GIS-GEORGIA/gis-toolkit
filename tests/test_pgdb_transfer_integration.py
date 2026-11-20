@@ -708,3 +708,32 @@ def test_merge_all_years_into_one_database(tmp_path):
     empty1, empty2 = fx.make_db(tmp_path, "e1.mdb"), fx.make_db(tmp_path, "e2.mdb")
     o2 = str(tmp_path / "none.mdb")
     assert c.merge_databases([empty1, empty2], o2) is None and not os.path.exists(o2)
+
+
+# ---- ერთი საერთო (ყველა წლის) ბაზა: პირველ გაშვებაზე იქმნება, შემდეგზე ემატება ----
+def test_common_all_years_database_is_created_then_appended(dbs, tmp_path):
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "A", "date": d(2025, 1, 1)}, {"no": "B", "date": d(2026, 2, 2)},
+                           {"no": "C", "date": d(2026, 3, 3)}])
+    fx.seed(src, "polygon", [{"no": "P", "date": d(2026, 4, 4)}])
+    common = c.all_years_output_path(dst, str(tmp_path))
+    assert common.endswith("_transferred_ALL_YEARS.mdb")
+    p25 = c.analyze(src, dst, mapping(), 2025)
+    c.execute(p25, backup=False)
+    r1 = c.export_inserted(p25, common, append=True)                 # შექმნა
+    assert r1.totals()["inserted"] == 1 and fx.counts(common)["point"] == (1, 1)
+    p26 = c.analyze(src, dst, mapping(), 2026)
+    c.execute(p26, backup=False)
+    r2 = c.export_inserted(p26, common, append=True)                 # დამატება
+    assert r2.totals()["inserted"] == 3
+    cnt = fx.counts(common)
+    assert cnt["point"] == (3, 3) and cnt["polygon"] == (1, 1)
+    # იგივე ჩანაწერები ხელახლა (მაგ. ხელით განმეორებული ექსპორტი) — არ მეორდება
+    r3 = c.export_inserted(p26, common, append=True)
+    assert r3.totals()["inserted"] == 0 and r3.totals()["duplicates"] == 3
+    assert fx.counts(common)["point"] == (3, 3)
+    # ცალკე წლის ბაზა დამოუკიდებლად მუშაობს და არსებულს არ გადაწერს
+    per_year = str(tmp_path / "py.mdb")
+    assert c.export_inserted(p26, per_year).totals()["inserted"] == 3
+    with pytest.raises(c.TransferError):
+        c.export_inserted(p26, per_year)

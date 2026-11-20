@@ -916,7 +916,13 @@ def transferred_output_path(dst_path, year, folder, stamp=None):
     return os.path.join(folder, "{}_transferred_{}_{}.mdb".format(stem, year, stamp))
 
 
-def export_inserted(plan, out_path, log=None, progress=None, cancel=None, template=None):
+def all_years_output_path(dst_path, folder=None):
+    """ერთი საერთო ბაზა ყველა წლისთვის (ფიქსირებული სახელი): ``<მიმღები>_transferred_ALL_YEARS.mdb``."""
+    stem = os.path.splitext(os.path.basename(dst_path))[0].replace(" ", "_")
+    return os.path.join(folder or os.path.dirname(os.path.abspath(dst_path)), "{}_transferred_ALL_YEARS.mdb".format(stem))
+
+
+def export_inserted(plan, out_path, log=None, progress=None, cancel=None, template=None, append=False):
     """მიმღებში **რეალურად ჩაწერილი** ჩანაწერების ასლი → **ახალი** ცალკე Personal Geodatabase.
 
     იგივე ჩანაწერები (ატრიბუტები + ზუსტი გეომეტრია მიმღების CRS-ში), რაც ძირითად ბაზაში ჩაიწერა — ცალკე
@@ -927,8 +933,11 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
     tpl = template or template_path()
     if not os.path.isfile(tpl):
         raise TransferError("no_template", tpl)
-    if os.path.exists(out_path):
+    appending = bool(append and os.path.exists(out_path))
+    if os.path.exists(out_path) and not appending:
         raise TransferError("exists", out_path)
+    if appending and any(same_file(out_path, x) for x in (plan.dst_path, plan.src_path)):
+        raise TransferError("same_db")
     wanted = {}
     for lp in plan.layers:
         done = [it for it in lp.to_insert if it.get("dec") and it["dec"]["decision"] == "inserted"]
@@ -937,21 +946,30 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
     if not wanted:
         log("no transferred records - separate database not created")
         return None
-    shutil.copyfile(tpl, out_path)
-    created = True
+    if not appending:
+        shutil.copyfile(tpl, out_path)
+    created = not appending
     try:
         dst_info = inspect_db(plan.dst_path)
         new_info = inspect_db(out_path)
-        wc = connect(out_path, "excl")
-        wcur = wc.cursor()
-        for kind, (lp, _items) in wanted.items():
-            dl = dst_info.layers[lp.dst_name]
-            nl = new_info.by_kind(kind)[0]
-            if dl.srtext:
-                wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (dl.srtext, nl.srid))
-        wc.commit()
-        wc.close()
-        new_info = inspect_db(out_path)
+        if appending:
+            for kind, (lp, _items) in wanted.items():
+                dl = dst_info.layers[lp.dst_name]
+                nl = new_info.by_kind(kind)[0]
+                if crs_relation(dl.srtext, nl.srtext) != "same":
+                    raise TransferError("crs_mismatch", "{}: {}".format(kind, out_path))
+            log("appending to existing database: {}".format(out_path))
+        else:
+            wc = connect(out_path, "excl")
+            wcur = wc.cursor()
+            for kind, (lp, _items) in wanted.items():
+                dl = dst_info.layers[lp.dst_name]
+                nl = new_info.by_kind(kind)[0]
+                if dl.srtext:
+                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (dl.srtext, nl.srid))
+            wc.commit()
+            wc.close()
+            new_info = inspect_db(out_path)
         out = Plan(plan.src_path, out_path, plan.year)
         for kind in KINDS:
             if kind not in wanted:
@@ -961,7 +979,31 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
             have = {f.name.upper(): f.name for f in nl.fields}
             nlp = LayerPlan(kind, lp.src_name, nl.name)
             dropped = set()
+            existing = set()
+            if appending:                                # (ნომერი, წელი) — უკვე არსებული ჩანაწერები საერთო ბაზაში
+                kf = find_field([f.name for f in nl.fields], KEY_FIELD)
+                df = find_field([f.name for f in nl.fields], DATE_FIELD)
+                ec = connect(out_path, "ro")
+                try:
+                    for (kv, dv) in ec.cursor().execute("SELECT [{}], [{}] FROM [{}]".format(kf, df, nl.name)):
+                        if normalize_no(kv) is not None and hasattr(dv, "year"):
+                            existing.add((normalize_no(kv), dv.year))
+                finally:
+                    ec.close()
+            skipped = 0
             for it in items:
+                if appending:
+                    kk = find_field(list(it["values"]), KEY_FIELD)
+                    dd = find_field(list(it["values"]), DATE_FIELD)
+                    dv = it["values"].get(dd) if dd else None
+                    key = (normalize_no(it["values"].get(kk)) if kk else None, dv.year if hasattr(dv, "year") else None)
+                    if key[0] is not None and key[1] is not None:
+                        if key in existing:
+                            skipped += 1
+                            log.detail("{} src OBJECTID {} no={} -> already in the all-years database (skipped)".format(
+                                kind, it["src_oid"], it["no"]))
+                            continue
+                        existing.add(key)
                 vals = {}
                 for col, v in it["values"].items():
                     if col.upper() in have:
@@ -973,14 +1015,16 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
                 cp["values"] = vals
                 nlp.to_insert.append(cp)
             nlp.found = len(items)
+            nlp.duplicates = skipped
             nlp.unmatched_fields = sorted(dropped)
             out.layers.append(nlp)
-            log("{}: {} transferred record(s) -> separate database ({})".format(kind.upper(), len(items), nl.name))
+            log("{}: {} transferred record(s) -> separate database ({}){}".format(
+                kind.upper(), len(items), nl.name, " | already there (same number+year): {}".format(skipped) if appending else ""))
             if dropped:
                 log("  fields not in the new database schema (not copied): {}".format(", ".join(sorted(dropped))), "WARN")
         execute(out, log=log, backup=False, progress=progress, cancel=cancel)
         created = False
-        log("transferred records saved to NEW database: {}".format(out_path))
+        log("transferred records saved to {} database: {}".format("the all-years" if appending else "NEW", out_path))
         return out
     finally:
         if created:
