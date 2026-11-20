@@ -561,7 +561,7 @@ class PgdbTransferTool(ToolFrame):
         self._set_text(self.errlog, "")
         self._reset_tree()
         self._wrote = False
-        self._log_path = core.default_log_path(dst, self.app_data_dir())
+        self._log_path = core.default_log_path(dst, self.app_data_dir(), year=year, src_path=src)
         self._set_busy(True)
         self.progress.configure(value=0)
         self.status.set(self.tr("st_analysing"))
@@ -583,9 +583,15 @@ class PgdbTransferTool(ToolFrame):
     def _analysis_worker(self, src, dst, year, mapping):
         log = self._make_log()
         try:
-            log("Database Data Transfer — year {}".format(year))
+            log.raw("=" * 78)
+            log.raw("DATABASE DATA TRANSFER — year {}".format(year))
+            log.raw("=" * 78)
             log("source:      {}".format(src))
             log("destination: {}".format(dst))
+            log("period:      {0}-01-01 00:00:00 .. {0}-12-31 23:59:59".format(year))
+            log("layer mapping: " + "; ".join("{}: {} -> {}".format(k.upper(), a, b) for k, (a, b) in mapping.items()))
+            log("options: backup={} | undated-export={}".format(self.backup_var.get(), self.undated_var.get()))
+            log("log file: {}".format(self._log_path))
             plan = core.analyze(src, dst, mapping, year, log=log,
                                 progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
                                 cancel=self.cancel_event.is_set)
@@ -650,6 +656,7 @@ class PgdbTransferTool(ToolFrame):
                 threading.Thread(target=self._write_worker, args=(plan, False, self._undated_path, True),
                                  daemon=True).start()
                 return
+            self._close_out(plan, "nothing to insert (analysis only)")
             self._finish(plan, written=False)
             self._set_busy(False)
             self.status.set(self.tr("ready"))
@@ -661,6 +668,7 @@ class PgdbTransferTool(ToolFrame):
             text += "\n" + self.tr("conf_undated", n=n_undated, p=self._undated_path)
         text += "\n" + self.tr("conf_ask", n=todo)
         if not messagebox.askyesno(self.tr("conf_title"), text):
+            self._close_out(plan, "declined by user at confirmation (analysis only, nothing written)")
             self._set_busy(False)
             self.status.set(self.tr("ready"))
             self._finish(plan, written=False, summary_only=True)
@@ -693,15 +701,39 @@ class PgdbTransferTool(ToolFrame):
                 except Exception as e:                 # noqa: BLE001
                     plan.undated_error = core.friendly_error(e)
                     log(str(e), "ERROR")
+            log.close()
+            self._close_out(plan, "COMPLETED" if not skip_main else "completed (records without a date only)",
+                            written=not skip_main)
             self.msg_queue.put(("written", plan))
         except core.TransferError as e:
             log("{}: {}".format(e.code, e.detail), "ERROR")
+            log.close()
+            self._close_out(plan, "FAILED / ROLLED BACK ({})".format(e.code))
             self.msg_queue.put(("error", e))
         except Exception as e:                     # noqa: BLE001
             log(str(e), "ERROR")
             self.msg_queue.put(("error", core.friendly_error(e)))
         finally:
             log.close()
+
+    def _close_out(self, plan, outcome, written=False):
+        """ლოგის დასრულება: საბოლოო შეჯამება + ჩანაწერების CSV + ისტორიის ინდექსი (ფაილებს მხოლოდ ემატება)."""
+        if not self._log_path:
+            return
+        try:
+            log = core.TransferLog(self._log_path)
+            elapsed = time.time() - plan.started
+            core.write_final_summary(plan, log, outcome, elapsed=elapsed, written=written,
+                                     undated=getattr(plan, "undated_plan", None))
+            csv_path = os.path.splitext(self._log_path)[0] + "_records.csv"
+            core.write_records_csv(plan, csv_path)
+            log("records file: {}".format(csv_path))
+            hist = core.append_history(self._log_path, plan, outcome, written=written, elapsed=elapsed)
+            if hist:
+                log("history index: {}".format(hist))
+            log.close()
+        except Exception:                          # noqa: BLE001
+            pass
 
     def _on_written(self, plan):
         self._wrote = True

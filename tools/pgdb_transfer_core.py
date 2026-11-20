@@ -461,26 +461,42 @@ def same_file(a, b):
 # ლოგი
 # ---------------------------------------------------------------------------
 class TransferLog(object):
-    """ტექსტური ლოგი დროის ბეჭდით: ფაილში + (არჩევით) UI-ში."""
+    """ტექსტური ლოგი დროის ბეჭდით: ფაილში + (არჩევით) UI-ში.
+
+    ფაილი ყოველთვის **ემატება** (``"a"``) — არსებულ ლოგს არასდროს გადაწერს. ``detail()`` — ხაზი მხოლოდ
+    ფაილში (UI-ს არ ეგზავნება): ჩანაწერ-დონის დეტალებისთვის."""
 
     def __init__(self, path=None, sink=None):
         self.path, self.sink, self.lines = path, sink, []
         self._fh = None
         if path:
             try:
-                self._fh = open(path, "w", encoding="utf-8")
+                self._fh = open(path, "a", encoding="utf-8")
             except OSError:
                 self._fh = None
                 self.path = None
 
-    def __call__(self, msg, level="INFO"):
-        line = "{} [{}] {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), level, msg)
+    def _emit(self, line):
         self.lines.append(line)
         if self._fh:
             self._fh.write(line + "\n")
             self._fh.flush()
+
+    def __call__(self, msg, level="INFO"):
+        line = "{} [{}] {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), level, msg)
+        self._emit(line)
         if self.sink:
             self.sink(line, level)
+
+    def detail(self, msg):
+        """მხოლოდ ფაილში (ჩანაწერ-დონის დეტალი)."""
+        self._emit("{} [DETAIL] {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
+
+    def raw(self, msg=""):
+        """ხაზი დროის ბეჭდისა და დონის გარეშე (ცხრილები/გამყოფები) — ფაილში + UI-ში."""
+        self._emit(msg)
+        if self.sink:
+            self.sink(msg, "INFO")
 
     def close(self):
         if self._fh:
@@ -511,6 +527,15 @@ class LayerPlan(object):
         self.blocked = None             # (კოდი, დეტალი) — ფენა არ გადაიტანება
         self.index_missing_in_src = 0   # წყაროს ჩანაწერები სივრცითი ინდექსის გარეშე (ინფო)
         self.verified = False
+        self.src_total = 0              # წყარო ფენაში სულ ჩანაწერი
+        self.src_years = {}             # წელი → რაოდენობა (წყარო); None = თარიღი არ აქვს
+        self.dst_total = 0              # მიმღებში სულ (ჩაწერამდე)
+        self.dst_years = {}             # წელი → რაოდენობა (მიმღები)
+        self.decisions = []             # ყველა არჩეული ჩანაწერის გადაწყვეტილება (dict)
+        self.dst_before = None          # (მწკრივები, ინდექსი) ჩაწერამდე
+        self.dst_after = None           # (მწკრივები, ინდექსი) ჩაწერის შემდეგ
+        self.extent_before = None
+        self.extent_after = None
 
     @property
     def to_insert_count(self):
@@ -561,6 +586,18 @@ def _make_item(r, oid, no, no_raw, col_index, copy_pairs, shape_i, kind, transfo
         v = r[col_index[s_]]
         values[d_] = bytes(blob) if (d_.upper() == "SHAPE") else v
     return {"src_oid": oid, "no": no, "values": values, "bbox": bb, "blob": bytes(blob)}, None
+
+
+def _dt(v):
+    return v.strftime("%Y-%m-%d %H:%M:%S") if hasattr(v, "strftime") else ("NULL" if v is None else str(v))
+
+
+def _years_text(years):
+    """{2026: 12, None: 3} → '2025=5, 2026=12, no date=3'."""
+    parts = ["{}={}".format(y, years[y]) for y in sorted(k for k in years if k is not None)]
+    if None in years:
+        parts.append("no date={}".format(years[None]))
+    return ", ".join(parts) or "-"
 
 
 def analyze(src_path, dst_path, mapping, year, log=None, progress=None, cancel=None,
@@ -639,16 +676,28 @@ def analyze(src_path, dst_path, mapping, year, log=None, progress=None, cancel=N
                     (datetime.datetime(MIN_VALID_YEAR, 1, 1), datetime.datetime(MAX_VALID_YEAR + 1, 1, 1))):
                 lp.invalid_dates.append((r[0], r[1], r[2]))
 
+            # --- ინვენტარი: წელი-წლობით განაწილება (წყარო და მიმღები) ---
+            for (dt,) in s_cur.execute("SELECT [{d}] FROM [{t}]".format(d=dsrc, t=sname)):
+                lp.src_total += 1
+                yk = dt.year if hasattr(dt, "year") else None
+                lp.src_years[yk] = lp.src_years.get(yk, 0) + 1
+            log("  source layer total: {} record(s); by year: {}".format(lp.src_total, _years_text(lp.src_years)))
+
             # --- მიმღების „ამ წლის“ ნომრების სნეპშოტი (გადატანამდე!) ---
-            dest_year = set()
+            dest_year = {}                  # ნომერი → [მიმღების OBJECTID-ები ამ წელს]
             dest_any = set()
-            for (no, dt) in d_cur.execute("SELECT [{k}], [{d}] FROM [{t}]".format(k=key_dst, d=ddst, t=dname)):
+            for (doid, no, dt) in d_cur.execute("SELECT OBJECTID, [{k}], [{d}] FROM [{t}]".format(
+                    k=key_dst, d=ddst, t=dname)):
+                lp.dst_total += 1
+                yk = dt.year if hasattr(dt, "year") else None
+                lp.dst_years[yk] = lp.dst_years.get(yk, 0) + 1
                 n = normalize_no(no)
                 if n is None:
                     continue
                 dest_any.add(n)
                 if in_year(dt, year):
-                    dest_year.add(n)
+                    dest_year.setdefault(n, []).append(doid)
+            log("  destination layer total: {} record(s); by year: {}".format(lp.dst_total, _years_text(lp.dst_years)))
 
             # --- წყარო ჩანაწერები არჩეული წლისთვის ---
             copy_pairs = fplan.copy
@@ -671,22 +720,47 @@ def analyze(src_path, dst_path, mapping, year, log=None, progress=None, cancel=N
                 no = normalize_no(no_raw)
                 if no is not None:
                     seen_nos[no] = seen_nos.get(no, 0) + 1
+                dt_val = r[col_index[dsrc]] if dsrc in col_index else None
+                dec = {"oid": oid, "no": no_raw, "date": dt_val, "decision": verdict, "dest_oids": [],
+                       "new_oid": None, "note": ""}
+                lp.decisions.append(dec)
                 if verdict == "duplicate":
                     lp.duplicates += 1
+                    dec["dest_oids"] = list(dest_year.get(no, []))
+                    log.detail("{} src OBJECTID {} no={} date={} -> SKIPPED (already in destination this year: "
+                               "dest OBJECTID {})".format(kind, oid, no_raw, _dt(dt_val), dec["dest_oids"]))
                     continue
                 if verdict == "no_number":
                     lp.no_number += 1
                     lp.errors.append((oid, no_raw, "no_number"))
+                    dec["decision"], dec["note"] = "error", "no_number"
+                    log.detail("{} src OBJECTID {} date={} -> NOT TRANSFERRED (no werilis_no)".format(
+                        kind, oid, _dt(dt_val)))
                     continue
                 if no in dest_any:
                     lp.same_no_other_year += 1
+                    dec["note"] = "same number exists in destination with another year/date"
                 item, err = _make_item(r, oid, no, no_raw, col_index, copy_pairs, shape_i, kind, transform, fplan)
                 if err:
                     lp.errors.append((oid, no_raw, err))
+                    dec["decision"], dec["note"] = "error", err
+                    log.detail("{} src OBJECTID {} no={} date={} -> NOT TRANSFERRED ({})".format(
+                        kind, oid, no_raw, _dt(dt_val), err))
                     continue
+                item["dec"] = dec
+                dec["decision"] = "insert"
                 lp.to_insert.append(item)
+                log.detail("{} src OBJECTID {} no={} date={} -> WILL INSERT{}".format(
+                    kind, oid, no_raw, _dt(dt_val), " (" + dec["note"] + ")" if dec["note"] else ""))
             lp.src_internal_dup_nos = sorted(n for n, c in seen_nos.items()
                                              if c > 1 and n not in dest_year)
+            for n_ in lp.src_internal_dup_nos:
+                log.detail("{} ambiguity: werilis_no {} occurs {} times in source selection".format(
+                    kind, n_, seen_nos[n_]))
+            for o_, n_ in lp.missing_dates:
+                log.detail("{} src OBJECTID {} no={} -> MISSING date".format(kind, o_, n_))
+            for o_, n_, d_ in lp.invalid_dates:
+                log.detail("{} src OBJECTID {} no={} -> INVALID date {}".format(kind, o_, n_, d_))
             if lp.src_internal_dup_nos:
                 log("  ⚠ ambiguity: {} werilis_no value(s) occur several times inside the source selection "
                     "(all are inserted because the destination has none for {}): {}".format(
@@ -843,13 +917,149 @@ def check_writable(path):
     conn.close()
 
 
-def default_log_path(dst_path, fallback_dir=None):
-    """ლოგის ფაილი: მიმღების გვერდით (ჩაუწერელია → fallback საქაღალდეში)."""
-    name = "db_transfer_{}.log".format(datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-    for folder in (os.path.dirname(os.path.abspath(dst_path)), fallback_dir):
-        if folder and os.path.isdir(folder) and os.access(folder, os.W_OK):
-            return os.path.join(folder, name)
+LOG_DIR_NAME = "db_transfer_logs"
+
+
+def _safe(name):
+    return "".join(c if (c.isalnum() or c in "-_") else "_" for c in os.path.splitext(os.path.basename(name))[0])[:40]
+
+
+def default_log_path(dst_path, fallback_dir=None, year=None, src_path=None):
+    """ლოგის ფაილი — ცალკე საქაღალდეში ``db_transfer_logs`` (მიმღების გვერდით; ჩაუწერელია → fallback).
+
+    სახელი შეიცავს **წელს**, წყაროს და მიმღებს და წამის სიზუსტის დროს, ამიტომ თითოეული გაშვება/წელი
+    ცალკე ფაილია და არაფერი იწერება გადაუწერლად: ``db_transfer_2026_baza_to_OMIKO_20261120_142600.log``."""
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = "db_transfer_{}{}_to_{}_{}.log".format(
+        "{}_".format(year) if year else "", _safe(src_path) if src_path else "src", _safe(dst_path), now)
+    for base in (os.path.dirname(os.path.abspath(dst_path)), fallback_dir):
+        if not (base and os.path.isdir(base) and os.access(base, os.W_OK)):
+            continue
+        folder = os.path.join(base, LOG_DIR_NAME)
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError:
+            continue
+        path = os.path.join(folder, name)
+        n = 1
+        while os.path.exists(path):                      # არასდროს არსებულის გადაწერა
+            n += 1
+            path = os.path.join(folder, name[:-4] + "_{}.log".format(n))
+        return path
     return name
+
+
+def write_final_summary(plan, log, outcome, elapsed=None, written=False, undated=None):
+    """საბოლოო შეჯამება ლოგში: თითო ფენა (წერტილი/ხაზი/პოლიგონი) + ჯამი + სტატუსი."""
+    t = plan.totals()
+    log.raw("")
+    log.raw("=" * 78)
+    log.raw("FINAL SUMMARY — year {} — outcome: {}".format(plan.year, outcome))
+    log.raw("=" * 78)
+    log.raw("source:      {}".format(plan.src_path))
+    log.raw("destination: {}".format(plan.dst_path))
+    if plan.backup_path:
+        log.raw("backup:      {}".format(plan.backup_path))
+    hdr = "{:<9}{:>8}{:>11}{:>10}{:>9}{:>8}{:>9}{:>9}".format(
+        "layer", "found", "duplicate", "to-insert", "inserted", "errors", "no-date", "bad-date")
+    log.raw(hdr)
+    log.raw("-" * len(hdr))
+    for lp in plan.layers:
+        if lp.blocked:
+            log.raw("{:<9} BLOCKED: {} {}".format(lp.kind.upper(), lp.blocked[0], lp.blocked[1]))
+            continue
+        log.raw("{:<9}{:>8}{:>11}{:>10}{:>9}{:>8}{:>9}{:>9}".format(
+            lp.kind.upper(), lp.found, lp.duplicates, lp.to_insert_count, lp.inserted if written else 0,
+            len(lp.errors), len(lp.missing_dates), len(lp.invalid_dates)))
+    log.raw("-" * len(hdr))
+    log.raw("{:<9}{:>8}{:>11}{:>10}{:>9}{:>8}{:>9}{:>9}".format(
+        "TOTAL", t["found"], t["duplicates"], t["to_insert"], t["inserted"] if written else 0, t["errors"],
+        sum(len(l.missing_dates) for l in plan.layers), sum(len(l.invalid_dates) for l in plan.layers)))
+    for lp in plan.layers:
+        if lp.blocked:
+            continue
+        log.raw("")
+        log.raw("[{}] {} -> {}".format(lp.kind.upper(), lp.src_name, lp.dst_name))
+        log.raw("   source total {} | by year: {}".format(lp.src_total, _years_text(lp.src_years)))
+        log.raw("   destination before {} | by year: {}".format(lp.dst_total, _years_text(lp.dst_years)))
+        if lp.dst_before and lp.dst_after:
+            log.raw("   destination rows {} -> {} | spatial index rows {} -> {}".format(
+                lp.dst_before[0], lp.dst_after[0], lp.dst_before[1], lp.dst_after[1]))
+        if lp.extent_before != lp.extent_after and lp.extent_after:
+            log.raw("   extent {} -> {}".format(lp.extent_before, lp.extent_after))
+        log.raw("   same number but another year in destination (inserted): {}".format(lp.same_no_other_year))
+        if lp.src_internal_dup_nos:
+            log.raw("   repeated werilis_no inside source selection ({}): {}".format(
+                len(lp.src_internal_dup_nos), ", ".join(lp.src_internal_dup_nos)))
+        if lp.unmatched_fields:
+            log.raw("   source fields not in destination: {}".format(", ".join(lp.unmatched_fields)))
+        if lp.reprojected:
+            log.raw("   geometry reprojected (coordinate systems differ)")
+        for oid, no, why in lp.errors:
+            log.raw("   ERROR src OBJECTID {} no={}: {}".format(oid, no, why))
+        for oid, no in lp.missing_dates:
+            log.raw("   MISSING date: src OBJECTID {} no={}".format(oid, no))
+        for oid, no, dt in lp.invalid_dates:
+            log.raw("   INVALID date: src OBJECTID {} no={} date={}".format(oid, no, dt))
+    if undated is not None:
+        log.raw("")
+        log.raw("records without a date -> new database: {}".format(undated.dst_path))
+        for lp in undated.layers:
+            log.raw("   {:<9} found {} | saved {} | errors {}".format(
+                lp.kind.upper(), lp.found, lp.inserted, len(lp.errors)))
+    if elapsed is not None:
+        log.raw("")
+        log.raw("duration: {:.1f} s".format(elapsed))
+    log.raw("=" * 78)
+
+
+CSV_COLUMNS = ["layer", "src_OBJECTID", "werilis_no", "date", "decision", "matched_dest_OBJECTID",
+               "new_dest_OBJECTID", "note"]
+
+
+def write_records_csv(plan, path):
+    """ყველა არჩეული ჩანაწერის გადაწყვეტილება CSV-ში (UTF-8 BOM — Excel-ში ქართულად იხსნება)."""
+    import csv
+    with open(path, "w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(CSV_COLUMNS)
+        for lp in plan.layers:
+            for d in lp.decisions:
+                w.writerow([lp.kind, d["oid"], d["no"], _dt(d["date"]), d["decision"],
+                            ";".join(str(x) for x in d["dest_oids"]), d["new_oid"] if d["new_oid"] is not None else "",
+                            d["note"]])
+            for oid, no in lp.missing_dates:
+                w.writerow([lp.kind, oid, no, "", "missing_date", "", "", "date is empty"])
+            for oid, no, dt in lp.invalid_dates:
+                w.writerow([lp.kind, oid, no, str(dt), "invalid_date", "", "", "date outside valid range"])
+    return path
+
+
+def append_history(log_path, plan, outcome, written=False, elapsed=None):
+    """ერთი ხაზი ისტორიის ინდექსში (``db_transfer_history.csv`` ლოგების საქაღალდეში) — ყველა გაშვება/წელი ერთ
+    ადგილას. ფაილი მხოლოდ ემატება."""
+    import csv
+    if not log_path:
+        return None
+    path = os.path.join(os.path.dirname(os.path.abspath(log_path)), "db_transfer_history.csv")
+    new = not os.path.exists(path)
+    t = plan.totals()
+    row = [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), plan.year, outcome, plan.src_path, plan.dst_path]
+    for kind in KINDS:
+        lp = next((l for l in plan.layers if l.kind == kind), None)
+        row += [lp.found, lp.duplicates, lp.inserted if written else 0, len(lp.errors)] if lp and not lp.blocked else ["", "", "", ""]
+    row += [t["found"], t["duplicates"], t["inserted"] if written else 0, t["errors"], t["bad_dates"],
+            "{:.1f}".format(elapsed) if elapsed is not None else "", os.path.basename(log_path)]
+    with open(path, "a", encoding="utf-8-sig" if new else "utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        if new:
+            head = ["time", "year", "outcome", "source", "destination"]
+            for kind in KINDS:
+                head += [kind + "_found", kind + "_duplicates", kind + "_inserted", kind + "_errors"]
+            head += ["total_found", "total_duplicates", "total_inserted", "total_errors", "bad_dates", "seconds", "log_file"]
+            w.writerow(head)
+        w.writerow(row)
+    return path
 
 
 def make_backup(dst_path, log=None):
@@ -887,6 +1097,11 @@ def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=Tr
             dl = info.layers[lp.dst_name]
             before[lp.kind] = (cur.execute("SELECT COUNT(*) FROM [{}]".format(lp.dst_name)).fetchval(),
                                cur.execute("SELECT COUNT(*) FROM [{}_SHAPE_Index]".format(lp.dst_name)).fetchval())
+        for lp in todo:
+            lp.dst_before = before[lp.kind]
+            lp.extent_before = tuple(info.layers[lp.dst_name].extent) if info.layers[lp.dst_name].extent else None
+            log("{}: destination before: {} row(s), {} spatial-index row(s)".format(
+                lp.kind.upper(), before[lp.kind][0], before[lp.kind][1]))
         new_ids = {}
         extents = {}
         total = sum(l.to_insert_count for l in todo)
@@ -909,13 +1124,23 @@ def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=Tr
                     # ერთი ჩანაწერის შეზღუდვის დარღვევა (მაგ. აუცილებელი ველი ცარიელია): Jet-ი
                     # მხოლოდ ამ ინსტრუქციას აუქმებს, ტრანზაქცია ცოცხალია. ჩანაწერი ანგარიშში გადადის,
                     # დანარჩენი გრძელდება — არაფერი ნახევრად არ იწერება.
-                    lp.errors.append((item["src_oid"], item["no"], "insert: " + str(e).split("]")[-1].strip()[:160]))
+                    why = "insert: " + str(e).split("]")[-1].strip()[:160]
+                    lp.errors.append((item["src_oid"], item["no"], why))
+                    if item.get("dec"):
+                        item["dec"]["decision"], item["dec"]["note"] = "error", why
+                    log.detail("{} src OBJECTID {} no={} -> INSERT FAILED ({})".format(
+                        lp.kind, item["src_oid"], item["no"], why))
                     done += 1
                     continue
                 oid = cur.execute("SELECT @@IDENTITY").fetchval()
                 gx = index_cells(item["bbox"], dl.origin_x, dl.origin_y, dl.grid)
                 cur.execute(isql, (oid,) + gx)
                 ids.append((oid, item))
+                if item.get("dec"):
+                    item["dec"]["new_oid"] = oid
+                    item["dec"]["decision"] = "inserted"
+                log.detail("{} src OBJECTID {} no={} -> INSERTED as dest OBJECTID {}".format(
+                    lp.kind, item["src_oid"], item["no"], oid))
                 b = item["bbox"]
                 ext = [b[0] if ext[0] is None else min(ext[0], b[0]),
                        b[1] if ext[1] is None else min(ext[1], b[1]),
@@ -926,6 +1151,7 @@ def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=Tr
                     progress(lp.kind, done, total)
             new_ids[lp.kind] = ids
             extents[lp.kind] = (ext, dl.extent)
+            lp.extent_after = tuple(ext) if ext[0] is not None else None
         # ექსტენტი: მხოლოდ თუ გაიზარდა
         for lp in todo:
             ext, old = extents[lp.kind]
@@ -938,6 +1164,7 @@ def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=Tr
             n_after = cur.execute("SELECT COUNT(*) FROM [{}]".format(lp.dst_name)).fetchval()
             i_after = cur.execute("SELECT COUNT(*) FROM [{}_SHAPE_Index]".format(lp.dst_name)).fetchval()
             k = len(new_ids[lp.kind])
+            lp.dst_after = (n_after, i_after)
             if n_after != n_before + k or i_after != i_before + k:
                 raise TransferError("verify_failed", "{}: rows {}→{} (+{} expected), index {}→{}".format(
                     lp.kind, n_before, n_after, k, i_before, i_after))
@@ -954,10 +1181,17 @@ def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=Tr
         for lp in todo:
             lp.inserted = len(new_ids[lp.kind])
             lp.verified = True
-            log("{}: inserted {} (verified)".format(lp.kind.upper(), lp.inserted))
+            log("{}: inserted {} (verified: row count, spatial index, geometry byte-for-byte) | insert errors: {} "
+                "| destination now {} row(s), {} index row(s)".format(
+                    lp.kind.upper(), lp.inserted, len([e for e in lp.errors if str(e[2]).startswith("insert:")]),
+                    lp.dst_after[0], lp.dst_after[1]))
     except Exception as e:                               # noqa: BLE001
         try:
             conn.rollback()
+            for lp in todo:                              # ჩაწერა არ მოხდა — ჩანაწერები „inserted“ არ არის
+                for d in lp.decisions:
+                    if d["decision"] == "inserted":
+                        d["decision"], d["new_oid"] = "rolled_back", None
             log("ROLLBACK — destination left unchanged", "WARN")
         finally:
             conn.close()

@@ -514,7 +514,7 @@ def test_totals_and_log_file(dbs, tmp_path):
     t = plan.totals()
     assert (t["found"], t["duplicates"], t["inserted"], t["errors"], t["bad_dates"]) == (2, 1, 1, 0, 1)
     text = (tmp_path / "x.log").read_text(encoding="utf-8")
-    assert "POINT" in text and "MISSING date" in text and "inserted 1 (verified)" in text
+    assert "POINT" in text and "MISSING date" in text and "inserted 1 (verified" in text
 
 
 # ---- ჩანაწერები თარიღის გარეშე → ახალი ცალკე ბაზა ----
@@ -596,3 +596,65 @@ def test_failed_undated_export_leaves_no_partial_file(dbs, tmp_path, monkeypatch
     with pytest.raises(c.TransferError):
         c.export_undated(src, mapping(), out)
     assert not os.path.exists(out)
+
+
+# ---- ლოგები: წელი-წლობით, გადაუწერელი, დეტალური ----
+def test_log_path_has_year_and_never_overwrites(tmp_path):
+    dst = tmp_path / "OMIKO BAZA.mdb"
+    dst.write_bytes(b"x")
+    p1 = c.default_log_path(str(dst), None, year=2023, src_path="baza.mdb")
+    p2 = c.default_log_path(str(dst), None, year=2026, src_path="baza.mdb")
+    assert "2023" in os.path.basename(p1) and "2026" in os.path.basename(p2) and p1 != p2
+    assert os.path.basename(os.path.dirname(p1)) == c.LOG_DIR_NAME
+    open(p1, "w").write("old")
+    p3 = c.default_log_path(str(dst), None, year=2023, src_path="baza.mdb")
+    if p3 == p1:                                          # იგივე წამი — ახალი სახელი უნდა მიიღოს
+        pytest.fail("existing log path reused")
+
+
+def test_transferlog_appends_instead_of_overwriting(tmp_path):
+    f = str(tmp_path / "a.log")
+    l1 = c.TransferLog(f)
+    l1("first")
+    l1.close()
+    l2 = c.TransferLog(f)
+    l2("second")
+    l2.detail("only in file")
+    l2.close()
+    text = open(f, encoding="utf-8").read()
+    assert "first" in text and "second" in text and "only in file" in text
+
+
+def test_detailed_log_records_every_decision(dbs, tmp_path):
+    src, dst = dbs
+    g = fx.geom("point", 500000.0, 4600000.0)
+    fx.seed(dst, "point", [{"no": "D", "date": d(2026, 1, 1)}, {"no": "O", "date": d(2025, 5, 5)}])
+    fx.seed(src, "point", [{"no": "D", "date": d(2026, 1, 1)}, {"no": "E", "date": d(2026, 2, 2)},
+                           {"no": "O", "date": d(2026, 3, 3)}, {"no": "N", "date": None}])
+    fx.seed(src, "line", [{"no": "L1", "date": d(2026, 4, 4)}])
+    fx.seed(src, "polygon", [{"no": "P1", "date": d(2026, 5, 5)}])
+    lf = str(tmp_path / "run.log")
+    log = c.TransferLog(lf)
+    plan = c.analyze(src, dst, mapping(), 2026, log=log)
+    c.execute(plan, log=log, backup=False)
+    c.write_final_summary(plan, log, "COMPLETED", elapsed=1.0, written=True)
+    csv_path = c.write_records_csv(plan, str(tmp_path / "run_records.csv"))
+    hist = c.append_history(lf, plan, "COMPLETED", written=True, elapsed=1.0)
+    c.append_history(lf, plan, "COMPLETED", written=True, elapsed=1.0)
+    log.close()
+    text = open(lf, encoding="utf-8").read()
+    # ინვენტარი წლებით, ყველა ფენა, ჩანაწერ-დონის გადაწყვეტილებები და საბოლოო ცხრილი
+    assert "by year: 2025=1, 2026=1" in text                                   # მიმღები (point)
+    assert "no date=1" in text                                                 # წყარო NULL თარიღი
+    assert "SKIPPED (already in destination this year" in text
+    assert "INSERTED as dest OBJECTID" in text
+    assert "MISSING date" in text
+    for k in ("POINT", "LINE", "POLYGON"):
+        assert k in text
+    assert "FINAL SUMMARY — year 2026 — outcome: COMPLETED" in text
+    assert "destination rows 2 -> 4" in text                                   # point: 2 + E + O(2026)
+    rows = open(csv_path, encoding="utf-8-sig").read().splitlines()
+    assert rows[0].startswith("layer,src_OBJECTID") and any(",duplicate," in r for r in rows)
+    assert sum(",inserted," in r for r in rows) == 4 and any(",missing_date," in r for r in rows)
+    h = open(hist, encoding="utf-8-sig").read().splitlines()
+    assert len(h) == 3 and h[0].startswith("time,year")                        # თავსართი + 2 გაშვება (დამატებით)
