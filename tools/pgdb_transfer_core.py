@@ -909,6 +909,87 @@ def export_undated(src_path, mapping, out_path, log=None, progress=None, cancel=
                 pass
 
 
+def transferred_output_path(dst_path, year, folder, stamp=None):
+    """ახალი ბაზის ფაილი გადატანილი ჩანაწერებისთვის: ``<მიმღები>_transferred_<წელი>_YYYYMMDD_HHMMSS.mdb``."""
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = os.path.splitext(os.path.basename(dst_path))[0].replace(" ", "_")
+    return os.path.join(folder, "{}_transferred_{}_{}.mdb".format(stem, year, stamp))
+
+
+def export_inserted(plan, out_path, log=None, progress=None, cancel=None, template=None):
+    """მიმღებში **რეალურად ჩაწერილი** ჩანაწერების ასლი → **ახალი** ცალკე Personal Geodatabase.
+
+    იგივე ჩანაწერები (ატრიბუტები + ზუსტი გეომეტრია მიმღების CRS-ში), რაც ძირითად ბაზაში ჩაიწერა — ცალკე
+    გადასახედად/გასაგზავნად. ახალი ბაზა იქმნება ცარიელი შაბლონიდან. ძირითადი ბაზა არ იცვლება.
+    აბრუნებს ``Plan``-ს ან ``None``-ს, თუ არაფერია."""
+    log = log or TransferLog()
+    cancel = cancel or (lambda: False)
+    tpl = template or template_path()
+    if not os.path.isfile(tpl):
+        raise TransferError("no_template", tpl)
+    if os.path.exists(out_path):
+        raise TransferError("exists", out_path)
+    wanted = {}
+    for lp in plan.layers:
+        done = [it for it in lp.to_insert if it.get("dec") and it["dec"]["decision"] == "inserted"]
+        if done and not lp.blocked:
+            wanted[lp.kind] = (lp, done)
+    if not wanted:
+        log("no transferred records - separate database not created")
+        return None
+    shutil.copyfile(tpl, out_path)
+    created = True
+    try:
+        dst_info = inspect_db(plan.dst_path)
+        new_info = inspect_db(out_path)
+        wc = connect(out_path, "excl")
+        wcur = wc.cursor()
+        for kind, (lp, _items) in wanted.items():
+            dl = dst_info.layers[lp.dst_name]
+            nl = new_info.by_kind(kind)[0]
+            if dl.srtext:
+                wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (dl.srtext, nl.srid))
+        wc.commit()
+        wc.close()
+        new_info = inspect_db(out_path)
+        out = Plan(plan.src_path, out_path, plan.year)
+        for kind in KINDS:
+            if kind not in wanted:
+                continue
+            lp, items = wanted[kind]
+            nl = new_info.by_kind(kind)[0]
+            have = {f.name.upper(): f.name for f in nl.fields}
+            nlp = LayerPlan(kind, lp.src_name, nl.name)
+            dropped = set()
+            for it in items:
+                vals = {}
+                for col, v in it["values"].items():
+                    if col.upper() in have:
+                        vals[have[col.upper()]] = v
+                    else:
+                        dropped.add(col)
+                cp = dict(it)
+                cp.pop("dec", None)                      # ძირითადი გეგმის გადაწყვეტილებებს არ ვეხებით
+                cp["values"] = vals
+                nlp.to_insert.append(cp)
+            nlp.found = len(items)
+            nlp.unmatched_fields = sorted(dropped)
+            out.layers.append(nlp)
+            log("{}: {} transferred record(s) -> separate database ({})".format(kind.upper(), len(items), nl.name))
+            if dropped:
+                log("  fields not in the new database schema (not copied): {}".format(", ".join(sorted(dropped))), "WARN")
+        execute(out, log=log, backup=False, progress=progress, cancel=cancel)
+        created = False
+        log("transferred records saved to NEW database: {}".format(out_path))
+        return out
+    finally:
+        if created:
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+
+
 def check_writable(path):
     """მიმღების ჩაწერისთვის მზადობა: ექსკლუზიურად გახსნა-დახურვა (არაფერს წერს).
 

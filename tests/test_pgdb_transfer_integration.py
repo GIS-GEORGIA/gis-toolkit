@@ -658,3 +658,29 @@ def test_detailed_log_records_every_decision(dbs, tmp_path):
     assert sum(",inserted," in r for r in rows) == 4 and any(",missing_date," in r for r in rows)
     h = open(hist, encoding="utf-8-sig").read().splitlines()
     assert len(h) == 3 and h[0].startswith("time,year")                        # თავსართი + 2 გაშვება (დამატებით)
+
+
+# ---- გადატანილი ჩანაწერების ცალკე ახალ ბაზაში ----
+def test_transferred_records_copy_into_separate_database(dbs, tmp_path):
+    src, dst = dbs
+    fx.seed(dst, "point", [{"no": "D", "date": d(2026, 1, 1)}])
+    fx.seed(src, "point", [{"no": "D", "date": d(2026, 1, 1)}, {"no": "E", "date": d(2026, 2, 2)},
+                           {"no": "F", "date": d(2026, 3, 3)}])
+    fx.seed(src, "polygon", [{"no": "P1", "date": d(2026, 5, 5)}])
+    h_src = sha(src)
+    plan = c.analyze(src, dst, mapping(), 2026)
+    c.execute(plan, backup=False)
+    dst_counts = fx.counts(dst)
+    out = str(tmp_path / "copy.mdb")
+    cp = c.export_inserted(plan, out)
+    assert cp.totals()["inserted"] == 3                    # E, F, P1 — დუბლიკატი D არა
+    cnt = fx.counts(out)
+    assert cnt["point"] == (2, 2) and cnt["polygon"] == (1, 1) and cnt["line"] == (0, 0)
+    assert fx.counts(dst) == dst_counts and sha(src) == h_src
+    # ძირითადი გეგმის გადაწყვეტილებები არ შეცვლილა (new_oid მიმღების OBJECTID-ია)
+    assert all(dd["decision"] == "inserted" for lp in plan.layers for dd in lp.decisions if dd["decision"] != "duplicate")
+    # არაფერია გადასატანი → ფაილი არ იქმნება
+    plan2 = c.analyze(src, dst, mapping(), 2026)
+    c.execute(plan2, backup=False)
+    out2 = str(tmp_path / "none.mdb")
+    assert c.export_inserted(plan2, out2) is None and not os.path.exists(out2)

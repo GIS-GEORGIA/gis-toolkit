@@ -58,6 +58,20 @@ DTR = {
     "backup": {"en": "Back up the destination before writing", "ka": "ჩაწერამდე მიმღების სარეზერვო ასლის შექმნა"},
     "tip_backup": {"en": "Copies the destination .mdb next to it (…_backup_DATE.mdb) before anything is written.",
                    "ka": "ჩაწერამდე მიმღები .mdb-ის ასლს ქმნის გვერდით (…_backup_თარიღი.mdb)."},
+    "copyset": {"en": "Also save the transferred records into a separate NEW database",
+                "ka": "გადატანილი ჩანაწერების დამატებით ცალკე ახალ ბაზაში შენახვა"},
+    "tip_copyset": {"en": "After a successful transfer, exactly the records that were written into the destination are also "
+                          "copied (all attributes, exact geometry) into a brand-new Personal Geodatabase next to the "
+                          "destination - handy for review or sending. The destination itself is written as usual.",
+                    "ka": "წარმატებული გადატანის შემდეგ ზუსტად ის ჩანაწერები, რაც მიმღებში ჩაიწერა (ყველა ატრიბუტით და "
+                          "ზუსტი გეომეტრიით), დამატებით გადაიწერება სრულიად ახალ Personal Geodatabase-ში — "
+                          "გადასახედად/გასაგზავნად. მიმღები ჩვეულებრივად იწერება."},
+    "conf_copyset": {"en": "\nThe transferred records will ALSO be saved into a separate NEW database:\n{p}",
+                     "ka": "\nგადატანილი ჩანაწერები დამატებით შეინახება ცალკე ახალ ბაზაში:\n{p}"},
+    "sum_copyset": {"en": "Transferred records also saved into NEW database ({n}):\n   {p}",
+                    "ka": "გადატანილი ჩანაწერები ცალკე ახალ ბაზაშიც შენახულია ({n}):\n   {p}"},
+    "sum_copyset_err": {"en": "Transferred records were NOT saved into a separate database: {e}",
+                        "ka": "გადატანილი ჩანაწერები ცალკე ბაზაში ვერ შეინახა: {e}"},
     "undated": {"en": "Save records WITHOUT a date into a separate NEW database",
                 "ka": "თარიღის გარეშე ჩანაწერების ცალკე ახალ ბაზაში შენახვა"},
     "tip_undated": {"en": "Records whose date (TariRI) is empty cannot belong to any year. They are copied (all attributes, "
@@ -246,6 +260,7 @@ class PgdbTransferTool(ToolFrame):
         self._wrote = False
         self._pending_start = False
         self._undated_path = None
+        self._copyset_path = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
@@ -274,6 +289,11 @@ class PgdbTransferTool(ToolFrame):
         self.backup_var = tk.BooleanVar(value=st.get("backup", saved.get("backup", True)))
         add_tip(ttk.Checkbutton(row, text=self.tr("backup"), variable=self.backup_var),
                 self.tr("tip_backup")).pack(side="left")
+        row3 = ttk.Frame(opts)
+        row3.pack(fill="x", padx=8, pady=(0, 6))
+        self.copyset_var = tk.BooleanVar(value=st.get("copyset", saved.get("copyset", False)))
+        add_tip(ttk.Checkbutton(row3, text=self.tr("copyset"), variable=self.copyset_var),
+                self.tr("tip_copyset")).pack(side="left")
         row2 = ttk.Frame(opts)
         row2.pack(fill="x", padx=8, pady=(0, 6))
         self.undated_var = tk.BooleanVar(value=st.get("undated", saved.get("undated", True)))
@@ -343,6 +363,7 @@ class PgdbTransferTool(ToolFrame):
         st["src"], st["dst"] = self.src_var.get(), self.dst_var.get()
         st["year"], st["backup"] = self.year_var.get(), self.backup_var.get()
         st["undated"] = self.undated_var.get()
+        st["copyset"] = self.copyset_var.get()
 
     def _pick(self, var):
         cur = var.get().strip()
@@ -590,7 +611,8 @@ class PgdbTransferTool(ToolFrame):
             log("destination: {}".format(dst))
             log("period:      {0}-01-01 00:00:00 .. {0}-12-31 23:59:59".format(year))
             log("layer mapping: " + "; ".join("{}: {} -> {}".format(k.upper(), a, b) for k, (a, b) in mapping.items()))
-            log("options: backup={} | undated-export={}".format(self.backup_var.get(), self.undated_var.get()))
+            log("options: backup={} | undated-export={} | transferred-copy={}".format(
+                self.backup_var.get(), self.undated_var.get(), self.copyset_var.get()))
             log("log file: {}".format(self._log_path))
             plan = core.analyze(src, dst, mapping, year, log=log,
                                 progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
@@ -666,6 +688,11 @@ class PgdbTransferTool(ToolFrame):
         text += self.tr("conf_backup") if self.backup_var.get() else self.tr("conf_nobackup")
         if n_undated:
             text += "\n" + self.tr("conf_undated", n=n_undated, p=self._undated_path)
+        self._copyset_path = (core.transferred_output_path(plan.dst_path, plan.year,
+                                                           os.path.dirname(os.path.abspath(plan.dst_path)))
+                              if self.copyset_var.get() else None)
+        if self._copyset_path:
+            text += "\n" + self.tr("conf_copyset", p=self._copyset_path)
         text += "\n" + self.tr("conf_ask", n=todo)
         if not messagebox.askyesno(self.tr("conf_title"), text):
             self._close_out(plan, "declined by user at confirmation (analysis only, nothing written)")
@@ -687,6 +714,18 @@ class PgdbTransferTool(ToolFrame):
                 log("--- writing ---")
                 core.execute(plan, log=log, backup=backup, progress=progress, cancel=self.cancel_event.is_set)
             plan.undated_plan, plan.undated_error = None, None
+            plan.copyset_plan, plan.copyset_error = None, None
+            if not skip_main and self._copyset_path:
+                try:
+                    log("--- transferred records -> separate new database ---")
+                    plan.copyset_plan = core.export_inserted(plan, self._copyset_path, log=log, progress=progress,
+                                                             cancel=self.cancel_event.is_set)
+                except core.TransferError as e:
+                    plan.copyset_error = e
+                    log("{}: {}".format(e.code, e.detail), "ERROR")
+                except Exception as e:                 # noqa: BLE001
+                    plan.copyset_error = core.friendly_error(e)
+                    log(str(e), "ERROR")
             if undated_path:
                 # ძირითადი ჩაწერა უკვე დაკომიტებულია — ამ ეტაპის შეცდომა მას არ აუქმებს, ცალკე ვატყობინებთ
                 try:
@@ -747,6 +786,11 @@ class PgdbTransferTool(ToolFrame):
         up = getattr(plan, "undated_plan", None)
         if up:
             msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
+        cp = getattr(plan, "copyset_plan", None)
+        if cp:
+            msg += "\n\n" + self.tr("sum_copyset", n=cp.totals()["inserted"], p=cp.dst_path)
+        if getattr(plan, "copyset_error", None):
+            msg += "\n\n" + self.tr("sum_copyset_err", e=self._msg(plan.copyset_error))
         if getattr(plan, "undated_error", None):
             msg += "\n\n" + self.tr("sum_undated_err", e=self._msg(plan.undated_error))
         messagebox.showinfo("GIS_BOX", msg)
@@ -779,6 +823,11 @@ class PgdbTransferTool(ToolFrame):
                              e=t["errors"], b=t["bad_dates"], t=fmt_duration(time.time() - plan.started)))
         if getattr(plan, "backup_path", None):
             lines.append(self.tr("sum_backup", p=plan.backup_path))
+        cp = getattr(plan, "copyset_plan", None)
+        if cp:
+            lines.append(self.tr("sum_copyset", n=cp.totals()["inserted"], p=cp.dst_path))
+        elif getattr(plan, "copyset_error", None):
+            lines.append(self.tr("sum_copyset_err", e=self._msg(plan.copyset_error)))
         up = getattr(plan, "undated_plan", None)
         if up:
             lines.append(self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path))
@@ -794,7 +843,8 @@ class PgdbTransferTool(ToolFrame):
             self.app.log("— " + self.tr("st_done", n=t["inserted"]))
         self.app.set_tool_config(self.tid, {"src": self.src_var.get().strip(), "dst": self.dst_var.get().strip(),
                                             "year": self.year_var.get().strip(), "backup": bool(self.backup_var.get()),
-                                            "undated": bool(self.undated_var.get())})
+                                            "undated": bool(self.undated_var.get()),
+                                            "copyset": bool(self.copyset_var.get())})
 
     def _cancel(self):
         if self.busy:
