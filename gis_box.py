@@ -117,6 +117,7 @@ TR = {
     "zoneint_name": {"en": "Zone intersection",     "ka": "დაცვის ზონის კვეთა"},
     "lineint_name": {"en": "Crossing & templates",  "ka": "კვეთა და შაბლონი"},
     "linebuf_name": {"en": "Line buffers",          "ka": "ბუფერების აგება"},
+    "dbtransfer_name": {"en": "Database Data Transfer", "ka": "ბაზებს შორის მონაცემთა გადატანა"},
     "map_name":     {"en": "Map services",          "ka": "რუკის სერვისები"},
     "tool_load_err":{"en": "This tool could not be loaded.",
                      "ka": "ეს ინსტრუმენტი ვერ ჩაიტვირთა."},
@@ -475,6 +476,11 @@ class GisBoxApp(tk.Tk):
             "factory": self._make_linebuf_tool,
         })
         specs.append({
+            "name_en": TR["dbtransfer_name"]["en"], "name_ka": TR["dbtransfer_name"]["ka"],
+            "tid": "db_transfer",
+            "factory": self._make_dbtransfer_tool,
+        })
+        specs.append({
             "name_en": TR["gdb2pg_name"]["en"], "name_ka": TR["gdb2pg_name"]["ka"],
             "factory": self._make_gdb2pg_tool,
         })
@@ -548,6 +554,10 @@ class GisBoxApp(tk.Tk):
     def _make_linebuf_tool(self, master):
         from tools.line_buffer import LineBufferTool
         return LineBufferTool(master, self)
+
+    def _make_dbtransfer_tool(self, master):
+        from tools.pgdb_transfer import PgdbTransferTool
+        return PgdbTransferTool(master, self)
 
     def show_tool_by_tid(self, tid):
         """ხელსაწყოზე გადართვა tid-ით; აბრუნებს frame-ს (ან None). სხვა ხელსაწყოებს

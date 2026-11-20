@@ -23,6 +23,8 @@ binaries = []
 hiddenimports = collect_submodules("tools")
 # Excel-ის ღია ფაილის დახურვა COM-ით (Shp → კოორდინატები) — pywin32
 hiddenimports += ["win32com", "win32com.client", "pythoncom", "pywintypes"]
+# ბაზებს შორის მონაცემთა გადატანა (.mdb) — pyodbc (C-გაფართოება) + სისტემური Access ODBC დრაივერი
+hiddenimports += ["pyodbc"]
 
 # მძიმე პაკეტები — სრული შეგროვება (data ფაილები: GDAL, proj.db, OCR მოდელები…)
 for pkg in ["pyogrio", "pyproj", "shapely", "geopandas", "fiona", "rasterio",

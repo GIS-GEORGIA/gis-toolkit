@@ -1,3 +1,4 @@
+
 # GIS_BOX — გაერთიანებული დამოკიდებულებები / merged dependencies
 #
 # ბაზისური ხელსაწყოები (შაბლონის კოპირება) მხოლოდ stdlib-ს იყენებს — pip არ სჭირდება.
@@ -17,6 +18,10 @@ openpyxl>=3.1
 # კითხულობს — LibreDWG-ის GPL ბინარი (tools/vendor/libredwg/) ცალკეა, pip-ს
 # არ სჭირდება.
 ezdxf>=1.4
+
+# --- ბაზებს შორის მონაცემთა გადატანა / Database Data Transfer (Personal Geodatabase .mdb) ---
+# Windows-ზე; სჭირდება სისტემური „Microsoft Access Database Engine“ (64-ბიტი) ODBC დრაივერი.
+pyodbc>=5.0; sys_platform == "win32"
 
 # --- კოორდინატების ამომღები / coordinate extractor ---
 numpy>=1.23
