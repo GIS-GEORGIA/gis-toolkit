@@ -17,6 +17,8 @@ datas = [
     # GNU LibreDWG (vendored, GPL-3.0) — DWG → DXF კონვერტერისთვის, subprocess-ით
     # გამოძახებული (tools/dwg_convert_core.py); იხ. tools/vendor/libredwg/README.md
     ("tools/vendor/libredwg", "tools/vendor/libredwg"),
+    # ცარიელი Personal Geodatabase-ის სქემა-შაბლონი (ახალი ბაზა თარიღის გარეშე ჩანაწერებისთვის)
+    ("tools/data/pgdb_template.mdb", "tools/data"),
 ]
 binaries = []
 # ხელსაწყოები lazy-ად იტვირთება — ცხადად ჩავრთოთ ყველა submodule

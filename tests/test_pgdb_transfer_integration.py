@@ -515,3 +515,84 @@ def test_totals_and_log_file(dbs, tmp_path):
     assert (t["found"], t["duplicates"], t["inserted"], t["errors"], t["bad_dates"]) == (2, 1, 1, 0, 1)
     text = (tmp_path / "x.log").read_text(encoding="utf-8")
     assert "POINT" in text and "MISSING date" in text and "inserted 1 (verified)" in text
+
+
+# ---- ჩანაწერები თარიღის გარეშე → ახალი ცალკე ბაზა ----
+def _undated(src, tmp_path, **kw):
+    out = str(tmp_path / "new_no_date.mdb")
+    plan = c.export_undated(src, mapping(), out, **kw)
+    return out, plan
+
+
+def test_records_without_date_go_to_a_new_separate_database(dbs, tmp_path):
+    src, dst = dbs
+    b1, b2 = fx.geom("polygon", 600000.0, 4700000.0), fx.geom("polygon", 610000.0, 4710000.0, multi=True)
+    fx.seed(src, "polygon", [{"no": "D1", "date": d(2026, 3, 3)},
+                             {"no": "N1", "date": None, "blob": b1, "attrs": {"ganmcxadeb": "უთარიღო", "STATUS": 3}},
+                             {"no": "N2", "date": None, "blob": b2},
+                             {"no": "OLD", "date": d(1850, 1, 1)}])                 # არასწორი თარიღი ≠ ცარიელი — აქ არ გადადის
+    h_src, h_dst = sha(src), sha(dst)
+    out, plan = _undated(src, tmp_path)
+    assert plan.totals()["inserted"] == 2 and os.path.isfile(out) and out != dst
+    rows = fx.fetch_all(out, "polygon", "werilis_no, SHAPE, ganmcxadeb, STATUS")
+    assert [r[0] for r in rows] == ["N1", "N2"]
+    assert bytes(rows[0][1]) == b1 and bytes(rows[1][1]) == b2                      # გეომეტრია ბაიტ-ბაიტ
+    assert rows[0][2] == "უთარიღო" and rows[0][3] == 3
+    assert fx.counts(out) == {"point": (0, 0), "line": (0, 0), "polygon": (2, 2)}   # ინდექსი ჩანაწერებთან თანხვედრაშია
+    assert sha(src) == h_src and sha(dst) == h_dst                                  # წყარო და მიმღები უცვლელია
+    assert fx.counts(dst)["polygon"] == (0, 0)
+
+
+def test_undated_works_for_every_layer_type(dbs, tmp_path):
+    src, dst = dbs
+    for k in KINDS:
+        fx.seed(src, k, [{"no": k + "_nd", "date": None}, {"no": k + "_ok", "date": d(2026, 1, 1)}])
+    out, plan = _undated(src, tmp_path)
+    assert plan.totals()["inserted"] == 3
+    for k in KINDS:
+        assert [r[1] for r in fx.fetch_all(out, k)] == [k + "_nd"]
+
+
+def test_no_new_database_when_every_record_has_a_date(dbs, tmp_path):
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "A", "date": d(2026, 1, 1)}])
+    out, plan = _undated(src, tmp_path)
+    assert plan is None and not os.path.exists(out)
+
+
+def test_new_database_takes_the_source_crs_and_keeps_geometry_unchanged(dbs, tmp_path):
+    src, dst = dbs
+    _set_srtext(src, 2, UTM37)
+    blob = fx.geom("polygon", 500000.0, 4650000.0)
+    fx.seed(src, "polygon", [{"no": "N", "date": None, "blob": blob}])
+    out, plan = _undated(src, tmp_path)
+    assert not plan.layers[2].reprojected
+    assert "UTM_Zone_37N" in c.inspect_db(out).layers["polygon"].srtext
+    assert bytes(fx.fetch_all(out, "polygon")[0][2]) == blob
+
+
+def test_existing_output_is_never_overwritten(dbs, tmp_path):
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "A", "date": None}])
+    out = tmp_path / "taken.mdb"
+    out.write_bytes(b"keep me")
+    with pytest.raises(c.TransferError) as e:
+        c.export_undated(src, mapping(), str(out))
+    assert e.value.code == "exists" and out.read_bytes() == b"keep me"
+
+
+def test_failed_undated_export_leaves_no_partial_file(dbs, tmp_path, monkeypatch):
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "p%d" % i, "date": None} for i in range(4)])
+    real, n = c.index_cells, {"i": 0}
+
+    def flaky(*a, **kw):
+        n["i"] += 1
+        if n["i"] == 3:
+            raise RuntimeError("boom")
+        return real(*a, **kw)
+    monkeypatch.setattr(c, "index_cells", flaky)
+    out = str(tmp_path / "partial.mdb")
+    with pytest.raises(c.TransferError):
+        c.export_undated(src, mapping(), out)
+    assert not os.path.exists(out)

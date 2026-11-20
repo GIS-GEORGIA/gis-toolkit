@@ -58,6 +58,29 @@ DTR = {
     "backup": {"en": "Back up the destination before writing", "ka": "ჩაწერამდე მიმღების სარეზერვო ასლის შექმნა"},
     "tip_backup": {"en": "Copies the destination .mdb next to it (…_backup_DATE.mdb) before anything is written.",
                    "ka": "ჩაწერამდე მიმღები .mdb-ის ასლს ქმნის გვერდით (…_backup_თარიღი.mdb)."},
+    "undated": {"en": "Save records WITHOUT a date into a separate NEW database",
+                "ka": "თარიღის გარეშე ჩანაწერების ცალკე ახალ ბაზაში შენახვა"},
+    "tip_undated": {"en": "Records whose date (TariRI) is empty cannot belong to any year. They are copied (all attributes, "
+                          "exact geometry) into a brand-new Personal Geodatabase next to the log file. Nothing is changed "
+                          "in the source or the destination.",
+                    "ka": "ჩანაწერები, რომელთაც თარიღი (TariRI) ცარიელი აქვთ, არც ერთ წელს არ მიეკუთვნება. ისინი "
+                          "(ყველა ატრიბუტით და ზუსტი გეომეტრიით) გადაიწერება სრულიად ახალ Personal Geodatabase-ში, ლოგის "
+                          "ფაილის გვერდით. წყაროსა და მიმღებში არაფერი იცვლება."},
+    "conf_undated": {"en": "\n{n} record(s) WITHOUT a date will be saved into a separate NEW database:\n{p}",
+                     "ka": "\n{n} ჩანაწერი თარიღის გარეშე შეინახება ცალკე ახალ ბაზაში:\n{p}"},
+    "conf_undated_only": {"en": "Nothing to insert into the destination.\n\n{n} record(s) WITHOUT a date can be saved into "
+                                "a separate NEW database:\n{p}\n\nSave them now?",
+                          "ka": "მიმღებში ჩასაწერი არაფერია.\n\n{n} ჩანაწერი თარიღის გარეშე შეიძლება შეინახოს ცალკე "
+                                "ახალ ბაზაში:\n{p}\n\nშევინახო ახლა?"},
+    "sum_undated": {"en": "Records without a date: {n} saved into NEW database:\n   {p}",
+                    "ka": "თარიღის გარეშე ჩანაწერი: {n} შენახულია ახალ ბაზაში:\n   {p}"},
+    "sum_undated_none": {"en": "Records without a date: none", "ka": "თარიღის გარეშე ჩანაწერი: არ არის"},
+    "sum_undated_err": {"en": "Records without a date were NOT saved: {e}", "ka": "თარიღის გარეშე ჩანაწერები ვერ შეინახა: {e}"},
+    "code_no_template": {"en": "The empty-database template is missing from the installation.\n\n{d}",
+                         "ka": "ცარიელი ბაზის შაბლონი ინსტალაციაში არ არის.\n\n{d}"},
+    "code_exists": {"en": "The output file already exists (it is never overwritten).\n\n{d}",
+                    "ka": "გამომავალი ფაილი უკვე არსებობს (არასდროს გადაიწერება).\n\n{d}"},
+    "st_undated": {"en": "Saving records without a date…", "ka": "თარიღის გარეშე ჩანაწერების შენახვა…"},
     "map_box": {"en": "Layers (matched by geometry type, not by name)", "ka": "ფენები (შესაბამისობა გეომეტრიის ტიპით, არა სახელით)"},
     "map_src": {"en": "Source layer", "ka": "საწყისი ფენა"},
     "map_dst": {"en": "Destination layer", "ka": "მიმღები ფენა"},
@@ -222,6 +245,7 @@ class PgdbTransferTool(ToolFrame):
         self._log_path = None
         self._wrote = False
         self._pending_start = False
+        self._undated_path = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
@@ -250,6 +274,11 @@ class PgdbTransferTool(ToolFrame):
         self.backup_var = tk.BooleanVar(value=st.get("backup", saved.get("backup", True)))
         add_tip(ttk.Checkbutton(row, text=self.tr("backup"), variable=self.backup_var),
                 self.tr("tip_backup")).pack(side="left")
+        row2 = ttk.Frame(opts)
+        row2.pack(fill="x", padx=8, pady=(0, 6))
+        self.undated_var = tk.BooleanVar(value=st.get("undated", saved.get("undated", True)))
+        add_tip(ttk.Checkbutton(row2, text=self.tr("undated"), variable=self.undated_var),
+                self.tr("tip_undated")).pack(side="left")
 
         self.map_box = ttk.LabelFrame(self, text=self.tr("map_box"))
         self.map_box.pack(fill="x", pady=(8, 0))
@@ -313,6 +342,7 @@ class PgdbTransferTool(ToolFrame):
         st = self._state()
         st["src"], st["dst"] = self.src_var.get(), self.dst_var.get()
         st["year"], st["backup"] = self.year_var.get(), self.backup_var.get()
+        st["undated"] = self.undated_var.get()
 
     def _pick(self, var):
         cur = var.get().strip()
@@ -590,9 +620,15 @@ class PgdbTransferTool(ToolFrame):
                 notes.append(self.tr("bad_dates", k=k, n=n_bad))
         return notes
 
+    def _undated_count(self, plan):
+        return sum(len(lp.missing_dates) for lp in plan.layers) if self.undated_var.get() else 0
+
     def _on_analysed(self, plan):
         self._fill_tree(plan, written=False)
         todo = plan.totals()["to_insert"]
+        n_undated = self._undated_count(plan)
+        self._undated_path = (core.undated_output_path(plan.src_path, os.path.dirname(os.path.abspath(plan.dst_path)))
+                              if n_undated else None)
         for lp in plan.layers:
             self._report_layer_issues(lp, plan)
         text = self.tr("conf_head", y=plan.year, s=os.path.basename(plan.src_path), d=os.path.basename(plan.dst_path))
@@ -606,12 +642,23 @@ class PgdbTransferTool(ToolFrame):
         if notes:
             text += self.tr("conf_warn") + "\n" + "\n".join("• " + n for n in notes) + "\n"
         if todo == 0:
+            if n_undated and messagebox.askyesno(self.tr("conf_title"), text + "\n" + self.tr("conf_undated_only",
+                                                                                              n=n_undated, p=self._undated_path)):
+                self.cancel_event.clear()
+                self.status.set(self.tr("st_undated"))
+                self.progress.configure(value=0)
+                threading.Thread(target=self._write_worker, args=(plan, False, self._undated_path, True),
+                                 daemon=True).start()
+                return
             self._finish(plan, written=False)
             self._set_busy(False)
             self.status.set(self.tr("ready"))
-            messagebox.showinfo(self.tr("conf_title"), text + "\n" + self.tr("conf_nothing"))
+            if not n_undated:
+                messagebox.showinfo(self.tr("conf_title"), text + "\n" + self.tr("conf_nothing"))
             return
         text += self.tr("conf_backup") if self.backup_var.get() else self.tr("conf_nobackup")
+        if n_undated:
+            text += "\n" + self.tr("conf_undated", n=n_undated, p=self._undated_path)
         text += "\n" + self.tr("conf_ask", n=todo)
         if not messagebox.askyesno(self.tr("conf_title"), text):
             self._set_busy(False)
@@ -621,15 +668,31 @@ class PgdbTransferTool(ToolFrame):
         self.cancel_event.clear()
         self.status.set(self.tr("st_writing"))
         self.progress.configure(value=0)
-        threading.Thread(target=self._write_worker, args=(plan, self.backup_var.get()), daemon=True).start()
+        threading.Thread(target=self._write_worker, args=(plan, self.backup_var.get(), self._undated_path, False),
+                         daemon=True).start()
 
-    def _write_worker(self, plan, backup):
+    def _write_worker(self, plan, backup, undated_path=None, skip_main=False):
         log = core.TransferLog(self._log_path, sink=lambda line, lvl: self.msg_queue.put(("log", (line, lvl))))
+        progress = lambda k, i, n: self.msg_queue.put(("progress", (k, i, n)))      # noqa: E731
         try:
-            log("--- writing ---")
-            core.execute(plan, log=log, backup=backup,
-                         progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
-                         cancel=self.cancel_event.is_set)
+            if not skip_main:
+                log("--- writing ---")
+                core.execute(plan, log=log, backup=backup, progress=progress, cancel=self.cancel_event.is_set)
+            plan.undated_plan, plan.undated_error = None, None
+            if undated_path:
+                # ძირითადი ჩაწერა უკვე დაკომიტებულია — ამ ეტაპის შეცდომა მას არ აუქმებს, ცალკე ვატყობინებთ
+                try:
+                    log("--- records without a date -> new database ---")
+                    mapping = {lp.kind: (lp.src_name, lp.dst_name) for lp in plan.layers}
+                    src_map = {k: (v[0], v[0]) for k, v in mapping.items()}
+                    plan.undated_plan = core.export_undated(plan.src_path, src_map, undated_path, log=log,
+                                                            progress=progress, cancel=self.cancel_event.is_set)
+                except core.TransferError as e:
+                    plan.undated_error = e
+                    log("{}: {}".format(e.code, e.detail), "ERROR")
+                except Exception as e:                 # noqa: BLE001
+                    plan.undated_error = core.friendly_error(e)
+                    log(str(e), "ERROR")
             self.msg_queue.put(("written", plan))
         except core.TransferError as e:
             log("{}: {}".format(e.code, e.detail), "ERROR")
@@ -648,7 +711,13 @@ class PgdbTransferTool(ToolFrame):
         n = plan.totals()["inserted"]
         self.status.set(self.tr("st_done", n=n))
         self._infos = None                        # ბაზები შეიცვალა — შესაბამისობა/რიცხვები ხელახლა
-        messagebox.showinfo("GIS_BOX", self.tr("st_done", n=n))
+        msg = self.tr("st_done", n=n)
+        up = getattr(plan, "undated_plan", None)
+        if up:
+            msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
+        if getattr(plan, "undated_error", None):
+            msg += "\n\n" + self.tr("sum_undated_err", e=self._msg(plan.undated_error))
+        messagebox.showinfo("GIS_BOX", msg)
 
     def _report_layer_issues(self, lp, plan):
         """შეცდომების/გაფრთხილებების არეში: ჩანაწერები, რომლებიც ვერ გადავა."""
@@ -678,6 +747,13 @@ class PgdbTransferTool(ToolFrame):
                              e=t["errors"], b=t["bad_dates"], t=fmt_duration(time.time() - plan.started)))
         if getattr(plan, "backup_path", None):
             lines.append(self.tr("sum_backup", p=plan.backup_path))
+        up = getattr(plan, "undated_plan", None)
+        if up:
+            lines.append(self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path))
+        elif getattr(plan, "undated_error", None):
+            lines.append(self.tr("sum_undated_err", e=self._msg(plan.undated_error)))
+        elif written and self.undated_var.get():
+            lines.append(self.tr("sum_undated_none"))
         if self._log_path:
             lines.append(self.tr("log_path", p=self._log_path))
             self.log_btn.configure(state="normal")
@@ -685,7 +761,8 @@ class PgdbTransferTool(ToolFrame):
         if written:
             self.app.log("— " + self.tr("st_done", n=t["inserted"]))
         self.app.set_tool_config(self.tid, {"src": self.src_var.get().strip(), "dst": self.dst_var.get().strip(),
-                                            "year": self.year_var.get().strip(), "backup": bool(self.backup_var.get())})
+                                            "year": self.year_var.get().strip(), "backup": bool(self.backup_var.get()),
+                                            "undated": bool(self.undated_var.get())})
 
     def _cancel(self):
         if self.busy:

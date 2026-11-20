@@ -536,6 +536,33 @@ class Plan(object):
         }
 
 
+def _make_item(r, oid, no, no_raw, col_index, copy_pairs, shape_i, kind, transform, fplan):
+    """წყაროს მწკრივი → ჩასასმელი ჩანაწერი ``(item, None)`` ან ``(None, შეცდომის_ტექსტი)``.
+
+    გეომეტრიის შემოწმება (ტიპი/bbox), საჭიროებისას გადაყვანა, ტექსტის სიგრძეების შემოწმება."""
+    blob = r[shape_i] if shape_i else None
+    try:
+        if blob is None:
+            raise ValueError("empty geometry")
+        bb = shape_bbox(blob)
+        if shape_kind(blob) != kind:
+            raise ValueError("unexpected shape type {}".format(shape_type(blob)))
+        if transform is not None:
+            blob = reproject_shape(blob, transform)
+            bb = shape_bbox(blob)
+    except ValueError as e:
+        return None, "geometry: {}".format(e)
+    for s_, d_, size in fplan.length_checked:
+        v = r[col_index[s_]]
+        if isinstance(v, str) and len(v) > size:
+            return None, "field {} too long ({} > {})".format(s_, len(v), size)
+    values = {}
+    for s_, d_ in copy_pairs:
+        v = r[col_index[s_]]
+        values[d_] = bytes(blob) if (d_.upper() == "SHAPE") else v
+    return {"src_oid": oid, "no": no, "values": values, "bbox": bb, "blob": bytes(blob)}, None
+
+
 def analyze(src_path, dst_path, mapping, year, log=None, progress=None, cancel=None,
             src_info=None, dst_info=None):
     """წყაროს წაკითხვა + მიმღების შემოწმება. **არაფერს წერს.** აბრუნებს ``Plan``-ს.
@@ -653,36 +680,11 @@ def analyze(src_path, dst_path, mapping, year, log=None, progress=None, cancel=N
                     continue
                 if no in dest_any:
                     lp.same_no_other_year += 1
-                # გეომეტრია
-                blob = r[shape_i] if shape_i else None
-                try:
-                    if blob is None:
-                        raise ValueError("empty geometry")
-                    bb = shape_bbox(blob)
-                    if shape_kind(blob) != kind:
-                        raise ValueError("unexpected shape type {}".format(shape_type(blob)))
-                    if transform is not None:
-                        blob = reproject_shape(blob, transform)
-                        bb = shape_bbox(blob)
-                except ValueError as e:
-                    lp.errors.append((oid, no_raw, "geometry: {}".format(e)))
+                item, err = _make_item(r, oid, no, no_raw, col_index, copy_pairs, shape_i, kind, transform, fplan)
+                if err:
+                    lp.errors.append((oid, no_raw, err))
                     continue
-                # ტექსტის სიგრძეები
-                bad = None
-                for s, d, size in fplan.length_checked:
-                    v = r[col_index[s]]
-                    if isinstance(v, str) and len(v) > size:
-                        bad = "field {} too long ({} > {})".format(s, len(v), size)
-                        break
-                if bad:
-                    lp.errors.append((oid, no_raw, bad))
-                    continue
-                values = {}
-                for s, d in copy_pairs:
-                    v = r[col_index[s]]
-                    values[d] = bytes(blob) if (d.upper() == "SHAPE") else v
-                lp.to_insert.append({"src_oid": oid, "no": no, "values": values, "bbox": bb,
-                                     "blob": bytes(blob)})
+                lp.to_insert.append(item)
             lp.src_internal_dup_nos = sorted(n for n, c in seen_nos.items()
                                              if c > 1 and n not in dest_year)
             if lp.src_internal_dup_nos:
@@ -713,6 +715,124 @@ def free_space_ok(path, needed):
         return shutil.disk_usage(os.path.dirname(os.path.abspath(path))).free > needed * 1.1
     except OSError:
         return True
+
+
+def template_path():
+    """ცარიელი Personal Geodatabase-ის სქემა-შაბლონი (``tools/data/pgdb_template.mdb``) — ახალი ბაზებისთვის."""
+    try:
+        from tools.apppaths import resource_dir
+        base = resource_dir()
+    except Exception:                                    # noqa: BLE001
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, "tools", "data", "pgdb_template.mdb")
+
+
+def undated_output_path(src_path, folder, stamp=None):
+    """ახალი ბაზის ფაილი თარიღის გარეშე ჩანაწერებისთვის: ``<წყარო>_no_date_YYYYMMDD_HHMMSS.mdb``."""
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = os.path.splitext(os.path.basename(src_path))[0].replace(" ", "_")
+    return os.path.join(folder, "{}_no_date_{}.mdb".format(stem, stamp))
+
+
+def export_undated(src_path, mapping, out_path, log=None, progress=None, cancel=None, template=None):
+    """ჩანაწერები, რომლებსაც თარიღი **საერთოდ არ აქვს** (NULL), → **ახალი** ცალკე Personal Geodatabase.
+
+    ახალი ბაზა იქმნება ცარიელი სქემა-შაბლონის ასლით; კოორდინატთა სისტემა ეგუება წყაროს (გეომეტრია
+    უცვლელად გადადის). ჩაწერა — იგივე ერთი ტრანზაქცია/ვერიფიკაცია, რაც ძირითად გადატანაში.
+    წყარო არ იცვლება. თუ ასეთი ჩანაწერი არ არის — ფაილი არ რჩება. აბრუნებს ``Plan``-ს
+    (``plan.dst_path`` — ახალი ბაზა) ან ``None``-ს, თუ არაფერია გადასატანი."""
+    log = log or TransferLog()
+    cancel = cancel or (lambda: False)
+    tpl = template or template_path()
+    if not os.path.isfile(tpl):
+        raise TransferError("no_template", tpl)
+    if os.path.exists(out_path):
+        raise TransferError("exists", out_path)
+    shutil.copyfile(tpl, out_path)
+    created = True
+    sc = None
+    try:
+        sc = connect(src_path, "ro")
+        src_info = inspect_db(src_path, sc)
+        new_info = inspect_db(out_path)
+        # ახალი ბაზის CRS = წყაროს CRS (რომ გეომეტრია არ გადაიყვანოს)
+        wc = connect(out_path, "excl")
+        wcur = wc.cursor()
+        for kind in KINDS:
+            if kind in mapping:
+                sl = src_info.layers[mapping[kind][0]]
+                nl = new_info.by_kind(kind)[0]
+                if sl.srtext:
+                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (sl.srtext, nl.srid))
+        wc.commit()
+        wc.close()
+        new_info = inspect_db(out_path)
+        plan = Plan(src_path, out_path, 0)
+        s_cur = sc.cursor()
+        for kind in KINDS:
+            if kind not in mapping:
+                continue
+            if cancel():
+                raise TransferError("cancelled")
+            sname = mapping[kind][0]
+            sl = src_info.layers[sname]
+            nl = new_info.by_kind(kind)[0]
+            lp = LayerPlan(kind, sname, nl.name)
+            plan.layers.append(lp)
+            log("{}: records without a date - {} -> {} (new database)".format(kind.upper(), sname, nl.name))
+            if sl.has_z or sl.has_m:
+                lp.blocked = ("has_zm", "")
+                continue
+            rel = crs_relation(sl.srtext, nl.srtext)
+            transform = None
+            if rel == "unknown":
+                lp.blocked = ("crs_unknown", "")
+                continue
+            if rel == "reproject":
+                transform = make_transformer(sl.srtext, nl.srtext)
+                lp.reprojected = True
+            fplan = plan_fields(sl.fields, nl.fields)
+            lp.unmatched_fields = list(fplan.unmatched_src)
+            dsrc = find_field(sl.field_names(), DATE_FIELD)
+            key_src = find_field(sl.field_names(), KEY_FIELD)
+            if not fplan.ok or not dsrc:
+                lp.blocked = ("schema", "; ".join("{} ({})".format(f, d) for _c, f, d in fplan.blockers))
+                continue
+            copy_pairs = fplan.copy
+            sel = ", ".join("[{}]".format(c) for c, _d in copy_pairs)
+            rows = s_cur.execute("SELECT OBJECTID, {sel} FROM [{t}] WHERE [{d}] IS NULL ORDER BY OBJECTID"
+                                 .format(sel=sel, t=sname, d=dsrc)).fetchall()
+            lp.found = len(rows)
+            col_index = {c: i + 1 for i, (c, _d) in enumerate(copy_pairs)}
+            shape_i = col_index.get(find_field([c for c, _ in copy_pairs], "SHAPE") or "SHAPE")
+            for n_done, r in enumerate(rows, start=1):
+                if cancel():
+                    raise TransferError("cancelled")
+                if progress:
+                    progress(kind, n_done, lp.found)
+                no_raw = r[col_index[key_src]] if key_src else None
+                item, err = _make_item(r, r[0], normalize_no(no_raw), no_raw, col_index, copy_pairs, shape_i,
+                                       kind, transform, fplan)
+                if err:
+                    lp.errors.append((r[0], no_raw, err))
+                    continue
+                lp.to_insert.append(item)
+            log("  found: {} | to save: {} | errors: {}".format(lp.found, lp.to_insert_count, len(lp.errors)))
+        if not plan.totals()["to_insert"]:
+            log("no records without a date - new database not created")
+            return None
+        execute(plan, log=log, backup=False, progress=progress, cancel=cancel)
+        created = False                                  # ფაილი ინახება
+        log("records without a date saved to NEW database: {}".format(out_path))
+        return plan
+    finally:
+        if sc is not None:
+            sc.close()
+        if created:
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
 
 
 def check_writable(path):

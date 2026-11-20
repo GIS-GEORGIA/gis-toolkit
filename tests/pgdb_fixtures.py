@@ -12,7 +12,7 @@ import shutil
 
 from tools import pgdb_transfer_core as core
 
-TEMPLATE = os.path.join(os.path.dirname(__file__), "data", "pgdb_template.mdb")
+TEMPLATE = core.template_path()
 
 # ველების სიები ფენების მიხედვით (როგორც ნამდვილ ბაზაშია)
 EXTRA_FIELDS = {
