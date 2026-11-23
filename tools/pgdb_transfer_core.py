@@ -24,6 +24,7 @@ Personal Geodatabase (.mdb) GDAL-ში **მხოლოდ წასაკი�
 import datetime
 import math
 import os
+import re
 import shutil
 import struct
 import time
@@ -914,6 +915,54 @@ def transferred_output_path(dst_path, year, folder, stamp=None):
     stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = os.path.splitext(os.path.basename(dst_path))[0].replace(" ", "_")
     return os.path.join(folder, "{}_transferred_{}_{}.mdb".format(stem, year, stamp))
+
+
+def parse_years(text):
+    """„2026“ / „2024-2026“ / „2024, 2026“ / „all“ / „ყველა“ → ``[წლები]`` ან ``"all"``. არასწორზე ``ValueError``."""
+    t = (text or "").strip().lower()
+    if t in ("all", "*", "ყველა"):
+        return "all"
+    years = set()
+    for part in t.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^(\d{4})\s*[-\u2013:]\s*(\d{4})$", part)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            if a > b or b - a > 100:
+                raise ValueError(part)
+            years.update(range(a, b + 1))
+        elif re.match(r"^\d{4}$", part):
+            years.add(int(part))
+        else:
+            raise ValueError(part)
+    if not years or any(not 1900 <= y <= 2200 for y in years):
+        raise ValueError(text)
+    return sorted(years)
+
+
+def source_years(src_path, mapping):
+    """წყაროს არჩეულ ფენებში არსებული წლები (თარიღის მიხედვით), ზრდადობით."""
+    conn = connect(src_path, "ro")
+    try:
+        info = inspect_db(src_path, conn)
+        cur = conn.cursor()
+        years = set()
+        for kind in KINDS:
+            if kind not in mapping:
+                continue
+            layer = info.layers[mapping[kind][0]]
+            dfield = find_field(layer.field_names(), DATE_FIELD)
+            if not dfield:
+                continue
+            for (dt,) in cur.execute("SELECT DISTINCT [{}] FROM [{}] WHERE [{}] IS NOT NULL".format(
+                    dfield, layer.name, dfield)):
+                if hasattr(dt, "year") and MIN_VALID_YEAR <= dt.year <= MAX_VALID_YEAR:
+                    years.add(dt.year)
+        return sorted(years)
+    finally:
+        conn.close()
 
 
 def all_years_output_path(dst_path, folder=None):

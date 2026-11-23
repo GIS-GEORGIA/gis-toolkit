@@ -52,9 +52,18 @@ DTR = {
     "pick_title": {"en": "Select a Personal Geodatabase (.mdb)", "ka": "აირჩიე Personal Geodatabase (.mdb)"},
     "opts": {"en": "Options", "ka": "პარამეტრები"},
     "year": {"en": "Year to transfer:", "ka": "გადასატანი წელი:"},
-    "tip_year": {"en": "All records with the date field (TariRI) from 1 Jan 00:00:00 to 31 Dec 23:59:59 of this year.",
-                 "ka": "ყველა ჩანაწერი, რომლის თარიღი (TariRI) ამ წლის 1 იანვარი 00:00:00 — 31 დეკემბერი 23:59:59 "
-                       "შუალედშია."},
+    "tip_year": {"en": "One year (2026), a range (2024-2026), a list (2024, 2026) or 'all' - every year found in the "
+                       "source. Several years are processed ONE AFTER ANOTHER: each year is analysed, confirmed by you "
+                       "and written separately (own log per year). Each year = records whose date (TariRI) is from "
+                       "1 Jan 00:00:00 to 31 Dec 23:59:59.",
+                 "ka": "ერთი წელი (2026), დიაპაზონი (2024-2026), სია (2024, 2026) ან „ყველა“ — წყაროში არსებული ყველა "
+                       "წელი. რამდენიმე წელი მუშავდება ერთიმეორის მიყოლებით: თითო წელი ცალკე ანალიზდება, შენ "
+                       "ადასტურებ და იწერება (ლოგი — თითო წელზე ცალკე). წელი = ჩანაწერები, რომელთა თარიღი (TariRI) "
+                       "1 იანვარი 00:00:00 — 31 დეკემბერი 23:59:59 შუალედშია."},
+    "e_no_years": {"en": "No dated records found in the source.", "ka": "წყაროში თარიღიანი ჩანაწერი ვერ მოიძებნა."},
+    "batch_head": {"en": "Years done:", "ka": "დამუშავებული წლები:"},
+    "batch_line": {"en": "{y}: inserted {n}", "ka": "{y}: ჩაიწერა {n}"},
+    "batch_stopped": {"en": "(stopped - remaining years were not processed)", "ka": "(გაჩერდა — დარჩენილი წლები არ დამუშავებულა)"},
     "backup": {"en": "Back up the destination before writing", "ka": "ჩაწერამდე მიმღების სარეზერვო ასლის შექმნა"},
     "tip_backup": {"en": "Copies the destination .mdb next to it (…_backup_DATE.mdb) before anything is written.",
                    "ka": "ჩაწერამდე მიმღები .mdb-ის ასლს ქმნის გვერდით (…_backup_თარიღი.mdb)."},
@@ -296,6 +305,9 @@ class PgdbTransferTool(ToolFrame):
         self._pending_start = False
         self._undated_path = None
         self._copyset_path = None
+        self._year_queue = []
+        self._batch_results = []
+        self._batch_stopped = False
         self._copyall_path = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
@@ -320,7 +332,7 @@ class PgdbTransferTool(ToolFrame):
         row.pack(fill="x", padx=8, pady=6)
         ttk.Label(row, text=self.tr("year")).pack(side="left")
         self.year_var = tk.StringVar(value=str(st.get("year") or saved.get("year") or DEFAULT_YEAR))
-        add_tip(ttk.Spinbox(row, from_=1990, to=2100, width=6, textvariable=self.year_var),
+        add_tip(ttk.Entry(row, width=14, textvariable=self.year_var),
                 self.tr("tip_year")).pack(side="left", padx=(6, 24))
         self.backup_var = tk.BooleanVar(value=st.get("backup", saved.get("backup", True)))
         add_tip(ttk.Checkbutton(row, text=self.tr("backup"), variable=self.backup_var),
@@ -494,9 +506,7 @@ class PgdbTransferTool(ToolFrame):
             messagebox.showwarning("GIS_BOX", self.tr("e_same"))
             return None
         try:
-            year = int(self.year_var.get())
-            if not 1900 <= year <= 2200:
-                raise ValueError
+            year = core.parse_years(self.year_var.get())
         except ValueError:
             messagebox.showwarning("GIS_BOX", self.tr("e_year"))
             return None
@@ -620,7 +630,46 @@ class PgdbTransferTool(ToolFrame):
         if missing:
             messagebox.showwarning("GIS_BOX", self.tr("e_map", k=", ".join(KIND_LABEL[k][self.app.lang] for k in missing)))
             return
-        self._launch_analysis(src, dst, year, mapping)
+        if year == "all":
+            try:
+                year = core.source_years(src, mapping)
+            except Exception as e:                 # noqa: BLE001
+                messagebox.showerror("GIS_BOX", self._msg(core.friendly_error(e)))
+                return
+            if not year:
+                messagebox.showwarning("GIS_BOX", self.tr("e_no_years"))
+                return
+        self._year_queue = list(year[1:])
+        self._batch_ctx = (src, dst, mapping)
+        self._batch_results = []
+        self._launch_analysis(src, dst, year[0], mapping)
+
+    def _batch_next(self):
+        """მომდევნო წელი რიგიდან (ავტომატურად); რიგი ცარიელია → ჯამური შეტყობინება."""
+        if self._year_queue and getattr(self, "_batch_ctx", None):
+            src, dst, mapping = self._batch_ctx
+            nxt = self._year_queue.pop(0)
+            self.after(100, lambda: self._launch_analysis(src, dst, nxt, mapping))
+            return True
+        if len(self._batch_results) > 1:
+            lines = [self.tr("batch_head")] + [self.tr("batch_line", y=y, n=n) for y, n in self._batch_results]
+            if getattr(self, "_batch_stopped", False):
+                lines.append(self.tr("batch_stopped"))
+            messagebox.showinfo("GIS_BOX", "\n".join(lines))
+        self._batch_results = []
+        return False
+
+    def _batch_abort(self):
+        """გამოტოვებული/გაუქმებული/შეცდომა: დარჩენილი წლები აღარ მუშავდება."""
+        if self._year_queue:
+            self._batch_stopped = True
+        self._year_queue = []
+        if len(getattr(self, "_batch_results", [])) > 1 or getattr(self, "_batch_stopped", False):
+            lines = [self.tr("batch_head")] + [self.tr("batch_line", y=y, n=n) for y, n in self._batch_results]
+            lines.append(self.tr("batch_stopped"))
+            messagebox.showinfo("GIS_BOX", "\n".join(lines))
+        self._batch_results = []
+        self._batch_stopped = False
 
     def _launch_analysis(self, src, dst, year, mapping):
         self.cancel_event.clear()
@@ -728,8 +777,13 @@ class PgdbTransferTool(ToolFrame):
             self._finish(plan, written=False)
             self._set_busy(False)
             self.status.set(self.tr("ready"))
-            if not n_undated:
+            self._batch_results.append((plan.year, 0))
+            if self._year_queue:
+                self._batch_next()
+                return
+            if not n_undated and len(self._batch_results) <= 1:
                 messagebox.showinfo(self.tr("conf_title"), text + "\n" + self.tr("conf_nothing"))
+            self._batch_next()
             return
         text += self.tr("conf_backup") if self.backup_var.get() else self.tr("conf_nobackup")
         if n_undated:
@@ -748,6 +802,7 @@ class PgdbTransferTool(ToolFrame):
             self._set_busy(False)
             self.status.set(self.tr("ready"))
             self._finish(plan, written=False, summary_only=True)
+            self._batch_abort()
             return
         self.cancel_event.clear()
         self.status.set(self.tr("st_writing"))
@@ -931,7 +986,15 @@ class PgdbTransferTool(ToolFrame):
             msg += "\n\n" + self.tr("sum_copyset_err", e=self._msg(plan.copyset_error))
         if getattr(plan, "undated_error", None):
             msg += "\n\n" + self.tr("sum_undated_err", e=self._msg(plan.undated_error))
-        messagebox.showinfo("GIS_BOX", msg)
+        self._batch_results.append((plan.year, n))
+        if self._year_queue:                       # რამდენიმე წელი: ავტომატურად შემდეგი, დიალოგის გარეშე
+            self._batch_next()
+            return
+        if len(self._batch_results) <= 1:
+            messagebox.showinfo("GIS_BOX", msg)
+            self._batch_results = []
+        else:
+            self._batch_next()
 
     def _report_layer_issues(self, lp, plan):
         """შეცდომების/გაფრთხილებების არეში: ჩანაწერები, რომლებიც ვერ გადავა."""
@@ -1042,6 +1105,7 @@ class PgdbTransferTool(ToolFrame):
                         self._append(self.errlog, self._msg(payload))
                     (messagebox.showinfo if cancelled else messagebox.showerror)(
                         "GIS_BOX" if cancelled else self.tr("st_error"), self._msg(payload))
+                    self._batch_abort()
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)

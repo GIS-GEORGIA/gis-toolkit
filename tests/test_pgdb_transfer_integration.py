@@ -763,3 +763,30 @@ def test_merge_keeps_repeated_numbers_inside_one_source(tmp_path):
     plan = c.merge_databases([a, b], out)
     # a: 2 ჩანაწერი (შიგა გამეორება არ იკარგება); b: 2025-ის R უკვე a-დან არის → გამოტოვება; 2026 — ახალი
     assert fx.counts(out)["point"] == (3, 3) and plan.totals()["duplicates"] == 1
+
+
+# ---- რამდენიმე წელი ერთად ----
+def test_parse_years():
+    assert c.parse_years("2026") == [2026]
+    assert c.parse_years("2024-2026") == [2024, 2025, 2026]
+    assert c.parse_years("2023, 2026;2024") == [2023, 2024, 2026]
+    assert c.parse_years("ყველა") == "all" and c.parse_years("ALL") == "all"
+    for bad in ("", "abc", "2026-2024", "20", "1800"):
+        with pytest.raises(ValueError):
+            c.parse_years(bad)
+
+
+def test_source_years_and_sequential_years_equal_one_by_one(dbs):
+    src, dst = dbs
+    fx.seed(src, "point", [{"no": "A", "date": d(2024, 1, 1)}, {"no": "B", "date": d(2025, 1, 1)},
+                           {"no": "B", "date": d(2025, 2, 2)}, {"no": "C", "date": d(2026, 1, 1)},
+                           {"no": "N", "date": None}])
+    fx.seed(src, "line", [{"no": "L", "date": d(2025, 5, 5)}])
+    ys = c.source_years(src, mapping())
+    assert ys == [2024, 2025, 2026]
+    total = 0
+    for y in ys:                                   # ისე, როგორც UI-ს რიგი აკეთებს: წელი-წლობით
+        pl = c.analyze(src, dst, mapping(), y)
+        c.execute(pl, backup=False)
+        total += pl.totals()["inserted"]
+    assert total == 5 and fx.counts(dst)["point"][0] == 4 and fx.counts(dst)["line"][0] == 1
