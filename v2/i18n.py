@@ -100,6 +100,7 @@ S = {
     "upd_rolled_back": {"ka": "წინა ვერსია აღდგენილია. გადატვირთე GIS_BOX.", "en": "Previous version restored. Restart GIS_BOX."},
     "upd_no_backup": {"ka": "ბექაპი ვერ მოიძებნა.", "en": "No backup found."},
     "upd_toast": {"ka": "ხელმისაწვდომია GIS_BOX {v} — იხილე „განახლებები“", "en": "GIS_BOX {v} is available - see Updates"},
+    "upd_confirm_restart": {"ka": "GIS_BOX ახლავე გადაიტვირთოს ცვლილებების გასააქტიურებლად?", "en": "Restart GIS_BOX now to apply the change?"},
     "upd_mb": {"ka": "{n:.1f} მბ", "en": "{n:.1f} MB"},
 }
 

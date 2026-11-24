@@ -20,6 +20,8 @@ def main(argv=None):
     from v2.main_window import MainWindow
     from v2.settings import Settings
 
+    from tools import update_manager
+    update_manager.cleanup_on_start()                  # removes *.gbold-* leftovers of a previous update (frozen only)
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setApplicationName("GIS_BOX")
     win = MainWindow(Settings())

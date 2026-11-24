@@ -432,10 +432,9 @@ def test_failed_install_rolls_back_automatically(tmp_path, monkeypatch):
     n = {"i": 0}
 
     def flaky(src, dst):
-        if str(src).endswith(".gbupd"):
+        if str(src).endswith("a.dll.gbupd"):                 # this one file is locked for good (even for the rename trick)
             n["i"] += 1
-            if n["i"] == 3:
-                raise PermissionError("file is locked")
+            raise PermissionError("file is locked")
         return real(src, dst)
     monkeypatch.setattr(um.os, "replace", flaky)
     with pytest.raises(um.UpdateError) as e:
@@ -484,3 +483,134 @@ def test_prune_backups(tmp_path):
         d.mkdir(parents=True)
         (d / ".update_manifest.json").write_text(json.dumps({"replaced": [], "added": [], "app_dir": "x"}))
     assert um.prune_backups(str(bk), keep=2) == 3 and len(um.list_backups(str(bk))) == 2
+
+
+# ----------------------------------------------------------------------------- running exe (Windows)
+import shutil
+import subprocess
+import sys
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="locking of running executables is a Windows behaviour")
+
+
+def _ping_exe():
+    return os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "ping.exe")
+
+
+@windows_only
+def test_install_over_a_RUNNING_exe_rename_trick_and_rollback_and_cleanup(tmp_path):
+    old_bytes = open(_ping_exe(), "rb").read()
+    new_bytes = old_bytes + b"NEWVERSION"                      # still a valid PE (overlay data)
+    app = tmp_path / "app"
+    app.mkdir()
+    exe = app / "GIS_BOX.exe"
+    exe.write_bytes(old_bytes)
+    pkg = make_zip(str(tmp_path / "new.zip"), {"GIS_BOX.exe": new_bytes, "lib/new.dll": b"N"}, top="GIS_BOX")
+    procs = [subprocess.Popen([str(exe), "-n", "60", "127.0.0.1"], stdout=subprocess.DEVNULL)]   # the RUNNING app
+    try:
+        with pytest.raises(PermissionError):                   # proves the situation: plain replace is refused
+            tmp = str(exe) + ".probe"
+            open(tmp, "wb").write(b"x")
+            try:
+                os.replace(tmp, str(exe))
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+        res = um.install_update(pkg, str(app), str(tmp_path / "bk"), "9.9.9", confirmed=True, verified=True)
+        assert exe.read_bytes() == new_bytes and "GIS_BOX.exe" in res.replaced      # replaced while running!
+        assert [f for f in os.listdir(app) if um.OLD_MARK in f]                     # old copy renamed away, still locked
+
+        # the new version is now the running one; rolling back must work over it as well
+        procs.append(subprocess.Popen([str(exe), "-n", "60", "127.0.0.1"], stdout=subprocess.DEVNULL))
+        um.rollback_update(res.backup_dir, confirmed=True)
+        assert exe.read_bytes() == old_bytes and not (app / "lib" / "new.dll").exists()
+    finally:
+        for p in procs:
+            p.kill()
+            p.wait()
+    removed = um.cleanup_old_files(str(app))                   # next start: nothing is locked any more
+    assert removed >= 1 and not [f for f in os.listdir(app) if um.OLD_MARK in f]
+
+
+@windows_only
+def test_locked_data_file_still_rolls_back_cleanly(tmp_path):
+    """A file that is open WITHOUT share-delete cannot even be renamed: real failure + full rollback."""
+    app = tmp_path / "app"
+    (app / "lib").mkdir(parents=True)
+    (app / "GIS_BOX.exe").write_bytes(b"OLD-EXE")
+    (app / "lib" / "a.dll").write_bytes(b"OLD-DLL")
+    pkg = make_zip(str(tmp_path / "new.zip"), {"GIS_BOX.exe": b"NEW-EXE", "lib/a.dll": b"NEW-DLL"}, top="GIS_BOX")
+    before = _snapshot(app)
+    held = open(app / "lib" / "a.dll", "rb")                   # plain open(): no FILE_SHARE_DELETE
+    try:
+        with pytest.raises(um.UpdateError) as e:
+            um.install_update(pkg, str(app), str(tmp_path / "bk"), confirmed=True, verified=True)
+        assert e.value.code == "locked"
+    finally:
+        held.close()
+    assert _snapshot(app) == before
+
+
+def test_cleanup_old_files_only_touches_marked_files(tmp_path):
+    (tmp_path / "keep.txt").write_text("k")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / ("a.dll" + um.OLD_MARK + "123")).write_text("old")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / ("x" + um.OLD_MARK + "1")).write_text("dev")
+    assert um.cleanup_old_files(str(tmp_path)) == 1
+    assert (tmp_path / "keep.txt").exists() and (tmp_path / ".git" / ("x" + um.OLD_MARK + "1")).exists()
+
+
+def test_place_never_leaves_the_file_missing(tmp_path, monkeypatch):
+    """If the second step of the rename trick fails, the original file is put back."""
+    dst = tmp_path / "f.bin"
+    dst.write_bytes(b"ORIGINAL")
+    tmp = tmp_path / "f.bin.gbupd"
+    tmp.write_bytes(b"NEW")
+    real = os.replace
+    calls = []
+
+    def fake(a, b):
+        calls.append((os.path.basename(a), os.path.basename(b)))
+        if str(a).endswith(".gbupd"):
+            raise PermissionError("locked")
+        return real(a, b)
+    monkeypatch.setattr(um.os, "name", "nt")
+    monkeypatch.setattr(um.os, "replace", fake)
+    with pytest.raises(PermissionError):
+        um._place(str(tmp), str(dst))
+    assert dst.read_bytes() == b"ORIGINAL" and not [f for f in os.listdir(tmp_path) if um.OLD_MARK in f]
+
+
+@windows_only
+def test_install_over_a_LOADED_dll(tmp_path):
+    """A frozen app has many loaded DLL/pyd files: they are locked like the exe and must be replaceable too."""
+    import ctypes
+    src = os.path.join(sys.base_prefix, "DLLs", "_bz2.pyd")
+    if not os.path.exists(src):
+        pytest.skip("no sample pyd")
+    app = tmp_path / "app"
+    (app / "lib").mkdir(parents=True)
+    (app / "GIS_BOX.exe").write_bytes(b"OLD-EXE")
+    dll = app / "lib" / "mod.pyd"
+    shutil.copy2(src, dll)
+    old_bytes = dll.read_bytes()
+    try:
+        handle = ctypes.WinDLL(str(dll))                           # the DLL is now loaded (= locked) in this process
+    except OSError:
+        pytest.skip("sample pyd cannot be loaded standalone")
+    new_bytes = old_bytes + b"V2"
+    pkg = make_zip(str(tmp_path / "new.zip"), {"GIS_BOX.exe": b"NEW-EXE", "lib/mod.pyd": new_bytes}, top="GIS_BOX")
+    with pytest.raises(PermissionError):
+        t = str(dll) + ".probe"
+        open(t, "wb").write(b"x")
+        try:
+            os.replace(t, str(dll))
+        finally:
+            if os.path.exists(t):
+                os.remove(t)
+    res = um.install_update(pkg, str(app), str(tmp_path / "bk"), confirmed=True, verified=True)
+    assert dll.read_bytes() == new_bytes and (app / "GIS_BOX.exe").read_bytes() == b"NEW-EXE"
+    um.rollback_update(res.backup_dir, confirmed=True)
+    assert dll.read_bytes() == old_bytes
+    del handle

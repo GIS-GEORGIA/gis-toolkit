@@ -1067,6 +1067,11 @@ if __name__ == "__main__":
     if "--v2" in sys.argv:                         # V2 (PySide6) ინტერფეისი იმავე exe-დან: GIS_BOX.exe --v2
         from gis_box_v2 import main as _v2_main    # Qt იტვირთება geopandas-მდე (Windows-ის DLL კონფლიქტი)
         sys.exit(_v2_main([a for a in sys.argv[1:] if a != "--v2"]))
+    try:
+        from tools import update_manager
+        update_manager.cleanup_on_start()              # removes *.gbold-* leftovers of a previous update (frozen only)
+    except Exception:
+        pass
     _enable_dpi_awareness()
     _app = GisBoxApp()
     if "--tool" in sys.argv:                       # V2 გარსიდან: კონკრეტული ხელსაწყოს პირდაპირ გახსნა

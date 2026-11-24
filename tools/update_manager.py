@@ -531,6 +531,62 @@ def _ts():
     return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+OLD_MARK = ".gbold-"      # a replaced-but-still-locked file is renamed to <name>.gbold-<n> until the next start
+
+
+def _place(tmp, dst):
+    """``os.replace(tmp, dst)``; on Windows a file that is in use (the running ``GIS_BOX.exe``, loaded DLLs/pyd)
+    cannot be overwritten but CAN be renamed: it is renamed away, the new file takes its name, and the old copy
+    is deleted by :func:`cleanup_old_files` at the next start. Raises ``PermissionError`` when even that fails."""
+    try:
+        os.replace(tmp, dst)
+        return
+    except PermissionError as first:
+        if os.name != "nt" or not os.path.exists(dst):
+            raise
+        old = "{}{}{}".format(dst, OLD_MARK, int(datetime.datetime.now().timestamp() * 1000))
+        try:
+            os.replace(dst, old)                      # rename away (allowed for files in use)
+        except OSError:
+            raise first
+        try:
+            os.replace(tmp, dst)
+        except OSError:
+            try:
+                os.replace(old, dst)                  # put the original back - never leave the app without the file
+            except OSError:
+                pass
+            raise
+
+
+def cleanup_on_start():
+    """Start-up hook of an INSTALLED (frozen) build: remove leftovers of a previous update in a background thread.
+    Does nothing when running from source."""
+    import sys
+    import threading
+    if not getattr(sys, "frozen", False):
+        return None
+    t = threading.Thread(target=lambda: cleanup_old_files(default_app_dir()), name="gisbox-update-cleanup", daemon=True)
+    t.start()
+    return t
+
+
+def cleanup_old_files(app_dir):
+    """Delete the ``*.gbold-*`` leftovers of a previous update (best effort; skips dev/venv folders).
+    Returns how many were removed. Call once at start-up of an installed (frozen) build."""
+    removed = 0
+    for dp, dn, fn in os.walk(app_dir):
+        dn[:] = [d for d in dn if d not in (".git", ".venv", "node_modules", "__pycache__")]
+        for f in fn:
+            if OLD_MARK in f:
+                try:
+                    os.remove(os.path.join(dp, f))
+                    removed += 1
+                except OSError:
+                    pass                               # still in use - next start
+    return removed
+
+
 def install_update(archive, app_dir, backup_root, new_version="", confirmed=False, allow_unverified=False,
                    verified=False, preserve=PRESERVE, progress=None, log=None):
     """Extract -> backup -> apply -> (on any failure) rollback. Needs ``confirmed=True``.
@@ -574,7 +630,7 @@ def install_update(archive, app_dir, backup_root, new_version="", confirmed=Fals
                 tmp = dst + ".gbupd"
                 shutil.copy2(os.path.join(root, *rel.split("/")), tmp)
                 try:
-                    os.replace(tmp, dst)
+                    _place(tmp, dst)
                 except PermissionError as e:
                     _silent_remove(tmp)
                     raise UpdateError("locked", "{} is in use - close GIS_BOX and try again".format(rel)) from e
@@ -583,7 +639,9 @@ def install_update(archive, app_dir, backup_root, new_version="", confirmed=Fals
                     progress(i, n)
         except BaseException:
             log("update failed - rolling back")
-            _undo(app_dir, backup, replaced, added)
+            failed = _undo(app_dir, backup, replaced, added)
+            if failed:
+                log("WARNING: could not restore: {}".format(", ".join(failed[:10])))
             raise
         manifest = {"version_before": cur_ver, "version_after": new_version, "time": stamp,
                     "replaced": replaced, "added": added, "skipped": skipped, "app_dir": app_dir}
@@ -608,16 +666,22 @@ def _silent_remove(p):
 
 
 def _undo(app_dir, backup, replaced, added):
+    """Restore replaced files / remove added ones. Returns the list of files that could not be restored."""
+    failed = []
     for rel in replaced:
         src = os.path.join(backup, *rel.split("/"))
         dst = os.path.join(app_dir, *rel.split("/"))
+        tmp = dst + ".gbupd"
         try:
             if os.path.exists(src):
-                shutil.copy2(src, dst)
+                shutil.copy2(src, tmp)
+                _place(tmp, dst)
         except OSError:
-            pass
+            _silent_remove(tmp)
+            failed.append(rel)
     for rel in added:
         _silent_remove(os.path.join(app_dir, *rel.split("/")))
+    return failed
 
 
 def list_backups(backup_root):
@@ -646,10 +710,9 @@ def rollback_update(backup_dir, confirmed=False):
     with open(mp, encoding="utf-8") as f:
         m = json.load(f)
     app_dir = m["app_dir"]
-    try:
-        _undo(app_dir, backup_dir, m["replaced"], m["added"])
-    except OSError as e:
-        raise UpdateError("locked", str(e)) from e
+    failed = _undo(app_dir, backup_dir, m["replaced"], m["added"])
+    if failed:
+        raise UpdateError("locked", "could not restore: {}".format(", ".join(failed[:10])))
     return m
 
 

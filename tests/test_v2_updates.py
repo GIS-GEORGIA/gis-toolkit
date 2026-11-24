@@ -107,6 +107,14 @@ def pick_first_asset(monkeypatch):
     monkeypatch.setattr(um, "select_asset", lambda rel, *a, **k: rel.assets[0])
 
 
+@pytest.fixture(autouse=True)
+def no_real_restart(monkeypatch):
+    """Never start a real process from tests; just record the restart requests."""
+    calls = []
+    monkeypatch.setattr(MainWindow, "restart_app", lambda self: calls.append(1))
+    return calls
+
+
 def test_updates_tool_registered_and_options_persist(win):
     p = _page(win, Net({}))
     assert p.v_current.text() == version.__version__
@@ -137,7 +145,7 @@ def test_check_error_is_shown_not_raised(win):
     assert not p.btn_dl.isEnabled()
 
 
-def test_download_needs_consent_then_installs_with_backup_and_rollback(win, tmp_path, monkeypatch):
+def test_download_needs_consent_then_installs_with_backup_and_rollback(win, tmp_path, monkeypatch, no_real_restart):
     app = tmp_path / "app"
     (app / "lib").mkdir(parents=True)
     (app / "GIS_BOX.exe").write_bytes(b"OLD")
@@ -175,11 +183,13 @@ def test_download_needs_consent_then_installs_with_backup_and_rollback(win, tmp_
     assert (app / "GIS_BOX.exe").read_bytes() == b"NEW" and (app / "lib" / "new.dll").exists()
     assert (app / "config.txt").read_text() == "MINE"
     assert um.list_backups(os.path.join(os.environ["GIS_BOX_V2_DIR"], "update_backups"))
+    assert no_real_restart == [1]                                  # the user agreed to restart after the install
 
     # 5) rollback
     p.rollback()
     assert wait_for(lambda: win.task is None and (app / "GIS_BOX.exe").read_bytes() == b"OLD")
     assert not (app / "lib" / "new.dll").exists()
+    assert wait_for(lambda: len(no_real_restart) == 2)             # ... and after the rollback
 
 
 def test_unverified_package_needs_second_confirmation(win, tmp_path, monkeypatch):
@@ -251,3 +261,28 @@ def test_auto_check_respects_notify_off(win):
     win.auto_update_check()
     assert wait_for(lambda: win.task is None and win.settings["updates"]["latest_version"] == "9.0.0")
     assert win.toast.text() == ""
+
+
+def test_restart_command_and_no_restart_when_declined(win, tmp_path, monkeypatch, no_real_restart):
+    from v2 import launcher
+    cmd = launcher.restart_command()
+    assert cmd[-1].endswith("gis_box_v2.py") or cmd[-1] == "--v2"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "GIS_BOX.exe").write_bytes(b"OLD")
+    monkeypatch.setattr(um, "default_app_dir", lambda: str(app))
+    p = _page(win, Net(_routes()))
+    p.check_now()
+    assert wait_for(lambda: win.task is None and p.check is not None)
+    monkeypatch.setattr(p, "_confirm", lambda t: True)
+    p.download()
+    assert wait_for(lambda: win.task is None and p.dl is not None)
+    answers = []
+
+    def confirm(t):
+        answers.append(t)
+        return "Restart" not in t and "გადაიტვირთოს" not in t       # yes to everything except the restart question
+    monkeypatch.setattr(p, "_confirm", confirm)
+    p.install()
+    assert wait_for(lambda: win.task is None and p.dl is None)
+    assert (app / "GIS_BOX.exe").read_bytes() == b"NEW" and no_real_restart == []

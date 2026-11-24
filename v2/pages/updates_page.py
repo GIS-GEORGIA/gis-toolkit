@@ -203,6 +203,8 @@ class UpdatesPage(QWidget):
         self.status.setText(msg)
         self.shell.notify(msg)
         self._refresh()
+        if self._confirm(self._t("upd_confirm_restart")):
+            self.shell.restart_app()
 
     def rollback(self):
         items = um.list_backups(backups_dir())
@@ -224,3 +226,5 @@ class UpdatesPage(QWidget):
         self.status.setText(self._t("upd_rolled_back"))
         self.shell.notify(self._t("upd_rolled_back"))
         self._refresh()
+        if self._confirm(self._t("upd_confirm_restart")):
+            self.shell.restart_app()

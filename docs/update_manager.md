@@ -27,6 +27,7 @@ Checks the official GitHub Releases of `GIS-GEORGIA/gis-toolkit`, downloads and 
 - Backup = full copy of the application folder (without `.git`, `.venv`, `build`, `dist`, logs) + `.update_manifest.json`, stored in the per-user folder (`.../GIS_BOX/update_backups`), newest 3 kept.
 - A git checkout (a `.git` folder) is **refused** - use `git pull` there.
 - Files are replaced atomically one by one (temp file + `os.replace`).
+- **Running Windows exe:** a file that is in use (`GIS_BOX.exe`, loaded DLL/pyd) cannot be overwritten but can be **renamed**. The installer renames it to `<name>.gbold-<n>`, puts the new file under the original name, and the leftover is deleted at the next start (`cleanup_on_start`). If the second step fails the original is put back, so the app is never left without the file. After the install the app offers **Restart now**. No helper program or downloaded script is involved. (Linux needs none of this: replacing a running binary by rename is allowed.)
 
 ## Settings (Updates page in V2)
 Automatic check ON/OFF (default **OFF**, at most once a day, only shows a notification), notify ON/OFF, allow prereleases, installed/latest version, release date, last check time, release notes. Stored in `v2_settings.json` → `updates`.
@@ -35,7 +36,9 @@ Automatic check ON/OFF (default **OFF**, at most once a day, only shows a notifi
 `.github/workflows/release.yml` now publishes a `<asset>.sha256` next to every package. The workflow still only runs on a `v*` tag; **nothing is released automatically by this work**.
 
 ## Known limitations (honest)
-- **A running Windows `GIS_BOX.exe` cannot replace its own files** (they are locked). The installer detects this, rolls back and reports "files are in use". Apply-on-restart / helper process is **not implemented yet**; until then update a Windows exe install by closing the app and extracting the verified ZIP by hand (the file is already downloaded and checked in `.../GIS_BOX/updates`). Source/portable-Python installs are not affected.
+- **Self-update of the running exe** works through the rename trick above and is tested with a really running executable and a really loaded DLL (`tests/test_update_manager.py`). It is **not yet exercised end to end with a real GIS_BOX release build** (old build updating itself from a published ZIP).
+- A file that is held open **without** share-delete (rare: a plain data file kept open by the app) cannot be renamed either: the installer rolls everything back and reports "files are in use - close GIS_BOX".
+- Between the rename and the restart the running process still executes the old code from memory; restart after the update.
 - Signature verification is implemented and tested but inactive until a public key is published in `PUBLIC_KEY_B64` and releases carry `.sig` files.
 - Files removed in a newer version are not deleted from the old installation.
 - The updater was verified with mocked network traffic only; it has not yet been exercised against a real published V2 release.

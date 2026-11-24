@@ -390,6 +390,18 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self.show_tool(cur)
 
+    def restart_app(self):
+        """Start a fresh V2 process and quit this one (used after an update or a rollback)."""
+        try:
+            launcher.start_detached(launcher.restart_command())
+        except OSError as e:
+            self.notify("{} {}".format(self.t("launch_failed"), e), "error")
+            return
+        self.close()
+        app = QApplication.instance()
+        if app:
+            app.quit()
+
     # ------------------------------------------------------------------ service menu
     def open_logs(self):
         from tools.logging_manager import open_log_dir
