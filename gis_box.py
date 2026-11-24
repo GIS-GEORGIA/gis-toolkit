@@ -1064,6 +1064,9 @@ if __name__ == "__main__":
     if "--gdb2pg-run" in sys.argv:
         from tools.gdb2postgis_cli import run_headless
         sys.exit(run_headless())
+    if "--v2" in sys.argv:                         # V2 (PySide6) ინტერფეისი იმავე exe-დან: GIS_BOX.exe --v2
+        from gis_box_v2 import main as _v2_main    # Qt იტვირთება geopandas-მდე (Windows-ის DLL კონფლიქტი)
+        sys.exit(_v2_main([a for a in sys.argv[1:] if a != "--v2"]))
     _enable_dpi_awareness()
     _app = GisBoxApp()
     if "--tool" in sys.argv:                       # V2 გარსიდან: კონკრეტული ხელსაწყოს პირდაპირ გახსნა

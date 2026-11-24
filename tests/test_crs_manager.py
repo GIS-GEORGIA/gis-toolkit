@@ -1,7 +1,9 @@
 import os
 
-import geopandas as gpd
 import pytest
+
+gpd = pytest.importorskip("geopandas")
+pytest.importorskip("pyogrio")
 from shapely.geometry import Point, box
 
 from tools import crs_manager as cm

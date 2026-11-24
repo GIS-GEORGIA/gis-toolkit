@@ -4,7 +4,7 @@
 python gis_box_v2.py             # start the V2 window
 python gis_box_v2.py --selftest  # build the window offscreen, print OK (CI / diagnostics)
 ```
-Needs `PySide6` (`requirements-optional.txt`). The classic app `gis_box.py` / `GIS_BOX.exe` is untouched and keeps working.
+Needs `PySide6` (`requirements-optional.txt`). The PyInstaller build contains it too: `GIS_BOX.exe --v2`. The classic app `gis_box.py` / `GIS_BOX.exe` is untouched and keeps working.
 
 ## What the window has
 - **Sidebar:** search (names + descriptions, Georgian and English), **favorites**, **recently used**, tool **categories**, tool descriptions as tooltips.

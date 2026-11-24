@@ -12,7 +12,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QCoreApplication, QThreadPool
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-import geopandas as gpd
+gpd = pytest.importorskip("geopandas")
 from shapely.geometry import Point
 
 from tools import crs_manager as cm
