@@ -961,6 +961,17 @@ class PgdbTransferTool(ToolFrame):
             log.close()
         except Exception:                          # noqa: BLE001
             pass
+        try:                                       # central V2 operation history (never breaks the tool)
+            from tools.logging_manager import get_manager
+            tot = plan.totals() if hasattr(plan, "totals") else {}
+            get_manager().record(
+                "pgdb_transfer", "ok" if written else "no_write",
+                inputs=[plan.src_path, plan.dst_path],
+                outputs=[self._log_path],
+                params={"year": plan.year, "outcome": outcome, "totals": tot},
+                duration=time.time() - plan.started)
+        except Exception:                          # noqa: BLE001
+            pass
 
     def _on_written(self, plan):
         self._wrote = True

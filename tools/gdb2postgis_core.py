@@ -83,6 +83,11 @@ def _set_pg_password(password: str) -> None:
     """Remember the PostgreSQL password for child processes (env var only, never argv/log)."""
     global _PG_PASSWORD
     _PG_PASSWORD = password or ""
+    try:                                          # keep the password out of every V2 log
+        from tools.logging_manager import register_secret
+        register_secret(_PG_PASSWORD)
+    except Exception:                             # noqa: BLE001
+        pass
 
 
 def _child_env(tool_path: str) -> dict:
