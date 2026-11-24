@@ -106,3 +106,81 @@ def build_buffer(geoms, distance):
     if not geoms:
         return None
     return unary_union(geoms).buffer(distance)
+
+
+# ---------------------------------------------------------------------------
+# GUI-ს გარეშე სამუშაო ფუნქციები (ორივე ინტერფეისისთვის: V2 გვერდი იყენებს)
+# ---------------------------------------------------------------------------
+class Cancelled(Exception):
+    """მომხმარებელმა გააუქმა (ბუფერების აგებისას)."""
+
+
+def scan_line_shapefiles(folder):
+    """``{ფაილის სახელი: სრული გზა}`` — საქაღალდეში არსებული ხაზოვანი shapefile-ები."""
+    import glob
+    out = {}
+    if not folder or not os.path.isdir(folder):
+        return out
+    import pyogrio
+    for shp in sorted(glob.glob(os.path.join(folder, "*.shp"))):
+        try:
+            gtype = str(pyogrio.read_info(shp).get("geometry_type") or "")
+        except Exception:                          # noqa: BLE001 - წაუკითხავი ფაილი სხვას არ აჩერებს
+            continue
+        if "Line" in gtype:
+            out[os.path.basename(shp)] = shp
+    return out
+
+
+def plan_layer(shp):
+    """რა გვჭირდება ამ შრისთვის: ``{"epsg", "convert", "current", "zone"}``.
+
+    ``ValueError("no_crs")`` — შრეს CRS არ აქვს (არაფერს ვივარაუდებთ)."""
+    import pyogrio
+    import pyproj
+    info = pyogrio.read_info(shp)
+    crs = info.get("crs")
+    epsg, convert = plan_crs(crs, info["total_bounds"])
+    cur = ""
+    if crs:
+        c = pyproj.CRS.from_user_input(crs)
+        cur = "EPSG:{}".format(c.to_epsg()) if c.to_epsg() else c.name
+    return {"epsg": epsg, "convert": convert, "current": cur, "zone": epsg - 32600}
+
+
+def build_buffers(shp, out_dir, zones, target_epsg, log=None, progress=None, cancel=None):
+    """ბუფერების აგება: ``zones`` = [(მანძილი_მ, სახელი), …]. აბრუნებს ``[(მანძილი, გზა), …]``.
+
+    - წყარო არასოდეს იცვლება; ყოველი ბუფერი ახალ ფაილში იწერება (``output_path`` — ინდექსი იზრდება);
+    - CRS-ის შეცვლა (თუ საჭიროა) ლოგში ჩანს; CRS-ის არქონა → ``ValueError("no_crs")``;
+    - ``cancel()`` → ``Cancelled`` ზონებს შორის."""
+    import geopandas as gpd
+
+    log = log or (lambda _m: None)
+    progress = progress or (lambda _i, _n: None)
+    cancel = cancel or (lambda: False)
+    gdf = gpd.read_file(shp)
+    if gdf.crs is None:
+        raise ValueError("no_crs")
+    if gdf.crs.to_epsg() != target_epsg:
+        from tools import crs_manager
+        gdf, rep = crs_manager.reproject_gdf(gdf, target_epsg)
+        log("reprojected {} -> EPSG:{}  ({}; accuracy {})".format(
+            rep.original_crs.label(), target_epsg, rep.method, rep.accuracy or "n/a"))
+        for w in rep.warnings:
+            log("WARNING: " + w)
+    geoms = [g for g in gdf.geometry if g is not None and not g.is_empty]
+    if not geoms:
+        raise ValueError("no_geom")
+    written = []
+    for i, (dist, name) in enumerate(zones, 1):
+        if cancel():
+            raise Cancelled()
+        geom = build_buffer(geoms, dist)
+        path = output_path(out_dir, name)
+        gpd.GeoDataFrame([{"Zone": name, "Dist_m": dist}], geometry=[geom], crs=gdf.crs).to_file(
+            path, driver="ESRI Shapefile", encoding="utf-8")
+        written.append((dist, path))
+        log("{} m -> {}".format(dist, path))
+        progress(i, len(zones))
+    return written

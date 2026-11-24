@@ -25,6 +25,7 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -534,7 +535,19 @@ def _ts():
 OLD_MARK = ".gbold-"      # a replaced-but-still-locked file is renamed to <name>.gbold-<n> until the next start
 
 
-def _place(tmp, dst):
+def _place(tmp, dst, retries=5, delay=0.15):
+    """:func:`_place_once` with a few short retries on Windows: antivirus scanners, the search indexer or a process that
+    is just starting hold a file for a moment, which is not a real lock. Permanent locks still fail (after ~1.5 s)."""
+    for attempt in range(retries):
+        try:
+            return _place_once(tmp, dst)
+        except PermissionError:
+            if os.name != "nt" or attempt == retries - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+
+
+def _place_once(tmp, dst):
     """``os.replace(tmp, dst)``; on Windows a file that is in use (the running ``GIS_BOX.exe``, loaded DLLs/pyd)
     cannot be overwritten but CAN be renamed: it is renamed away, the new file takes its name, and the old copy
     is deleted by :func:`cleanup_old_files` at the next start. Raises ``PermissionError`` when even that fails."""

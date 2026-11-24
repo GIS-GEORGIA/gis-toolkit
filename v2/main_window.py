@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
             page.set_file(path)
 
     # ------------------------------------------------------------------ background tasks
-    def run(self, fn, tool, inputs=None, params=None, on_done=None, success_msg=None):
+    def run(self, fn, tool, inputs=None, params=None, on_done=None, success_msg=None, on_log=None):
         """Run a GIS function in a worker thread with progress, cancel and notifications."""
         if self.task is not None:
             return None
@@ -335,7 +335,8 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setVisible(True)
         self.busy_changed.emit(True)
         self.task = workers.run_task(fn, tool, inputs, params, on_done=done, on_error=failed,
-                                     on_cancelled=cancelled, on_progress=progress, on_finished=finished)
+                                     on_cancelled=cancelled, on_progress=progress, on_finished=finished,
+                                     on_log=on_log)
         return self.task
 
     def cancel_task(self):

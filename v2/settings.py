@@ -14,6 +14,7 @@ DEFAULTS = {
     "recent_tools": [],
     "recent_files": [],
     "window": {"w": 1180, "h": 760},
+    "tool_state": {},                # remembered paths/options per native tool
     "updates": {"auto_check": False, "notify": True, "prerelease": False, "last_check": "",
                 "latest_version": "", "latest_published": ""},
 }
