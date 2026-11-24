@@ -99,6 +99,41 @@ DTR = {
                     "ka": "გადატანილი ჩანაწერები ცალკე ახალ ბაზაშიც შენახულია ({n}):\n   {p}"},
     "sum_copyset_err": {"en": "Transferred records were NOT saved into a separate database: {e}",
                         "ka": "გადატანილი ჩანაწერები ცალკე ბაზაში ვერ შეინახა: {e}"},
+    "onego": {"en": "Confirm ONCE for all years (no per-year dialogs)",
+              "ka": "ერთი დადასტურება ყველა წელზე (თითო წელზე დიალოგის გარეშე)"},
+    "tip_onego": {"en": "With several years you confirm one time at the start (years, destination, backup). Each year is "
+                        "still analysed and logged separately. A year with blocked layers, record errors or repeated "
+                        "werilis_no is NOT written silently - for that year the normal dialog appears. Backup of the "
+                        "destination is made once, before the first year.",
+                  "ka": "რამდენიმე წლის დროს ერთხელ ადასტურებ დასაწყისში (წლები, მიმღები, ბექაპი). თითო წელი მაინც "
+                        "ცალკე ანალიზდება და ლოგდება. წელი, სადაც ფენა დაბლოკილია, ჩანაწერებს შეცდომა აქვთ ან "
+                        "werilis_no მეორდება, ჩუმად არ ჩაიწერება — ამ წელზე ჩვეულებრივი დიალოგი გამოჩნდება. მიმღების "
+                        "ბექაპი ერთხელ კეთდება, პირველ წლამდე."},
+    "final": {"en": "Build the FINAL database as a NEW file - leave the destination untouched",
+              "ka": "საბოლოო ბაზა ახალ ფაილად — მიმღები ხელუხლებელი რჩება"},
+    "tip_final": {"en": "A fresh copy of the destination is made (<destination>_FINAL_<date time>.mdb) and ALL chosen "
+                        "years are transferred into that copy. The real destination is not modified at all, so no "
+                        "backup is needed. Existing records of the destination are kept in the new file; the same "
+                        "werilis_no + the same year is not repeated. An existing file is never overwritten.",
+                  "ka": "მიმღებისგან კეთდება ახალი ასლი (<მიმღები>_FINAL_<თარიღი დრო>.mdb) და არჩეული ყველა წელი ამ "
+                        "ასლში გადადის. რეალური მიმღები საერთოდ არ იცვლება, ამიტომ ბექაპი არ სჭირდება. მიმღების "
+                        "არსებული ჩანაწერები ახალ ფაილში რჩება; იგივე werilis_no + იგივე წელი არ მეორდება. არსებული "
+                        "ფაილი არასდროს გადაიწერება."},
+    "conf_batch": {"en": "Years to transfer: {y}\nFrom: {s}\nTo:   {d}\n{mode}\n{extra}\nYou will NOT be asked again for each "
+                         "year (a year with problems still asks).\n\nContinue?",
+                   "ka": "გადასატანი წლები: {y}\nსაწყისი: {s}\nმიმღები: {d}\n{mode}\n{extra}\nთითო წელზე აღარ "
+                         "გკითხავ (პრობლემიანი წელი მაინც იკითხავს).\n\nგავაგრძელო?"},
+    "mode_final": {"en": "NEW final file (destination NOT modified):\n   {p}",
+                   "ka": "ახალი საბოლოო ფაილი (მიმღები არ იცვლება):\n   {p}"},
+    "mode_direct": {"en": "Written directly INTO the destination.", "ka": "იწერება პირდაპირ მიმღებში."},
+    "size_warn": {"en": "\n⚠ The database is already {mb:.0f} MB = {pct:.0f}% of the 2 GB Access limit. Consider "
+                        "Compact & Repair, or a PostGIS/other target for further years.",
+                  "ka": "\n⚠ ბაზა უკვე {mb:.0f} მბ = Access-ის 2 გბ ზღვრის {pct:.0f}%. გაითვალისწინე Compact & Repair "
+                        "ან სხვა სამიზნე (PostGIS) შემდგომი წლებისთვის."},
+    "sum_final": {"en": "FINAL database (new file; destination untouched):\n   {p}",
+                  "ka": "საბოლოო ბაზა (ახალი ფაილი; მიმღები ხელუხლებელია):\n   {p}"},
+    "st_copy": {"en": "Creating the new final database (copy)…", "ka": "იქმნება ახალი საბოლოო ბაზა (ასლი)…"},
+    "code_copy_failed": {"en": "Could not create the new final database: {d}", "ka": "ახალი საბოლოო ბაზის შექმნა ვერ მოხერხდა: {d}"},
     "btn_merge": {"en": "Merge all years into ONE database…", "ka": "ყველა წლის ერთ ბაზაში გაერთიანება…"},
     "tip_merge": {"en": "Choose the per-year databases (e.g. the *_transferred_<year>_*.mdb files) - all their records are "
                         "combined into ONE brand-new database (points, lines, polygons). Records with the same werilis_no "
@@ -309,6 +344,8 @@ class PgdbTransferTool(ToolFrame):
         self._batch_results = []
         self._batch_stopped = False
         self._copyall_path = None
+        self._batch_auto = False
+        self._batch_backed_up = False
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
@@ -347,6 +384,16 @@ class PgdbTransferTool(ToolFrame):
         self.copyall_var = tk.BooleanVar(value=st.get("copyall", saved.get("copyall", False)))
         add_tip(ttk.Checkbutton(row4, text=self.tr("copyall"), variable=self.copyall_var),
                 self.tr("tip_copyall")).pack(side="left")
+        rowf = ttk.Frame(opts)
+        rowf.pack(fill="x", padx=8, pady=(0, 6))
+        self.final_var = tk.BooleanVar(value=st.get("final", saved.get("final", False)))
+        add_tip(ttk.Checkbutton(rowf, text=self.tr("final"), variable=self.final_var),
+                self.tr("tip_final")).pack(side="left")
+        rowo = ttk.Frame(opts)
+        rowo.pack(fill="x", padx=8, pady=(0, 6))
+        self.onego_var = tk.BooleanVar(value=st.get("onego", saved.get("onego", False)))
+        add_tip(ttk.Checkbutton(rowo, text=self.tr("onego"), variable=self.onego_var),
+                self.tr("tip_onego")).pack(side="left")
         row2 = ttk.Frame(opts)
         row2.pack(fill="x", padx=8, pady=(0, 6))
         self.undated_var = tk.BooleanVar(value=st.get("undated", saved.get("undated", True)))
@@ -421,6 +468,7 @@ class PgdbTransferTool(ToolFrame):
         st["undated"] = self.undated_var.get()
         st["copyset"] = self.copyset_var.get()
         st["copyall"] = self.copyall_var.get()
+        st["final"], st["onego"] = self.final_var.get(), self.onego_var.get()
 
     def _pick(self, var):
         cur = var.get().strip()
@@ -639,10 +687,52 @@ class PgdbTransferTool(ToolFrame):
             if not year:
                 messagebox.showwarning("GIS_BOX", self.tr("e_no_years"))
                 return
+        final = bool(self.final_var.get())
+        auto = bool(self.onego_var.get()) and len(year) > 1
+        self._batch_auto, self._batch_backed_up = False, False
+        if final or auto:                              # ერთი საერთო დადასტურება
+            fpath = core.final_output_path(dst) if final else None
+            extra = ""
+            if self.copyall_var.get():
+                extra += self.tr("conf_copyall", p=core.all_years_output_path(dst)).strip("\n") + "\n"
+            if not final and self.backup_var.get():
+                extra += self.tr("conf_backup").strip("\n") + "\n"
+            sw = core.size_warning(dst)
+            if sw:
+                extra += self.tr("size_warn", mb=sw[0], pct=sw[1])
+            mode = self.tr("mode_final", p=fpath) if final else self.tr("mode_direct")
+            if not messagebox.askyesno(self.tr("conf_title"), self.tr(
+                    "conf_batch", y=", ".join(str(y) for y in year), s=os.path.basename(src),
+                    d=os.path.basename(dst), mode=mode, extra=extra)):
+                return
+            self._batch_auto = auto
+            if final:
+                self._set_busy(True)
+                self.status.set(self.tr("st_copy"))
+                self._year_queue = list(year[1:])
+                self._batch_results = []
+                threading.Thread(target=self._final_copy_worker, args=(src, dst, fpath, year[0], mapping),
+                                 daemon=True).start()
+                return
         self._year_queue = list(year[1:])
         self._batch_ctx = (src, dst, mapping)
         self._batch_results = []
         self._launch_analysis(src, dst, year[0], mapping)
+
+    def _final_copy_worker(self, src, dst, fpath, first_year, mapping):
+        try:
+            core.make_final_copy(dst, fpath)
+            self.msg_queue.put(("final_ready", (src, fpath, first_year, mapping)))
+        except core.TransferError as e:
+            self.msg_queue.put(("error", e))
+        except Exception as e:                         # noqa: BLE001
+            self.msg_queue.put(("error", core.friendly_error(e)))
+
+    def _on_final_ready(self, payload):
+        src, fpath, first_year, mapping = payload
+        self._final_path = fpath
+        self._batch_ctx = (src, fpath, mapping)
+        self._launch_analysis(src, fpath, first_year, mapping)
 
     def _batch_next(self):
         """მომდევნო წელი რიგიდან (ავტომატურად); რიგი ცარიელია → ჯამური შეტყობინება."""
@@ -655,6 +745,8 @@ class PgdbTransferTool(ToolFrame):
             lines = [self.tr("batch_head")] + [self.tr("batch_line", y=y, n=n) for y, n in self._batch_results]
             if getattr(self, "_batch_stopped", False):
                 lines.append(self.tr("batch_stopped"))
+            if self.final_var.get() and getattr(self, "_final_path", None):
+                lines.append(self.tr("sum_final", p=self._final_path))
             messagebox.showinfo("GIS_BOX", "\n".join(lines))
         self._batch_results = []
         return False
@@ -797,7 +889,11 @@ class PgdbTransferTool(ToolFrame):
         if self._copyall_path:
             text += "\n" + self.tr("conf_copyall", p=self._copyall_path)
         text += "\n" + self.tr("conf_ask", n=todo)
-        if not messagebox.askyesno(self.tr("conf_title"), text):
+        clean = not any(lp.blocked or lp.errors or lp.src_internal_dup_nos for lp in plan.layers)
+        if self._batch_auto and clean:
+            self._append(self.errlog, "[auto] {}: {}".format(plan.year, self.tr("conf_line", k="∑", f=plan.totals()["found"],
+                         u=plan.totals()["duplicates"], n=todo, e=0).strip()))
+        elif not messagebox.askyesno(self.tr("conf_title"), text):
             self._close_out(plan, "declined by user at confirmation (analysis only, nothing written)")
             self._set_busy(False)
             self.status.set(self.tr("ready"))
@@ -807,7 +903,10 @@ class PgdbTransferTool(ToolFrame):
         self.cancel_event.clear()
         self.status.set(self.tr("st_writing"))
         self.progress.configure(value=0)
-        threading.Thread(target=self._write_worker, args=(plan, self.backup_var.get(), self._undated_path, False),
+        backup = (bool(self.backup_var.get()) and not self.final_var.get()
+                  and not (self._batch_auto and self._batch_backed_up))
+        self._batch_backed_up = self._batch_backed_up or backup
+        threading.Thread(target=self._write_worker, args=(plan, backup, self._undated_path, False),
                          daemon=True).start()
 
     def _write_worker(self, plan, backup, undated_path=None, skip_main=False):
@@ -982,6 +1081,8 @@ class PgdbTransferTool(ToolFrame):
         self.status.set(self.tr("st_done", n=n))
         self._infos = None                        # ბაზები შეიცვალა — შესაბამისობა/რიცხვები ხელახლა
         msg = self.tr("st_done", n=n)
+        if self.final_var.get() and getattr(self, "_final_path", None):
+            msg += "\n\n" + self.tr("sum_final", p=self._final_path)
         up = getattr(plan, "undated_plan", None)
         if up:
             msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
@@ -1062,7 +1163,9 @@ class PgdbTransferTool(ToolFrame):
                                             "year": self.year_var.get().strip(), "backup": bool(self.backup_var.get()),
                                             "undated": bool(self.undated_var.get()),
                                             "copyset": bool(self.copyset_var.get()),
-                                            "copyall": bool(self.copyall_var.get())})
+                                            "copyall": bool(self.copyall_var.get()),
+                                            "final": bool(self.final_var.get()),
+                                            "onego": bool(self.onego_var.get())})
 
     def _cancel(self):
         if self.busy:
@@ -1096,6 +1199,8 @@ class PgdbTransferTool(ToolFrame):
                     if getattr(self, "_pending_start", False):
                         self._pending_start = False
                         self._start()
+                elif kind == "final_ready":
+                    self._on_final_ready(payload)
                 elif kind == "analysed":
                     self._on_analysed(payload)
                 elif kind == "written":
