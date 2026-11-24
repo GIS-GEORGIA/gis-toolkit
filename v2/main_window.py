@@ -36,6 +36,8 @@ class MainWindow(QMainWindow):
         self.apply_theme(settings["theme"], save=False)
         self._build_ui()
         self.show_tool(HOME)
+        self.update_opener = None                  # tests inject a fake network
+        QTimer.singleShot(2500, self.auto_update_check)
 
     def t(self, key, **f):
         return tr(self.lang, key, **f)
@@ -339,6 +341,22 @@ class MainWindow(QMainWindow):
     def cancel_task(self):
         if self.task is not None:
             self.task.cancel()
+
+    # ------------------------------------------------------------------ automatic update check
+    def auto_update_check(self):
+        """Optional (default OFF) background check at most once a day; only ever notifies, never downloads."""
+        from tools import update_manager as um
+        from v2 import update_state
+        u = self.settings["updates"]
+        if not u.get("auto_check") or self.task is not None or not um.should_auto_check(u.get("last_check", "")):
+            return
+        pre = bool(u.get("prerelease"))
+
+        def done(chk):
+            if update_state.record_check(self.settings, chk) and u.get("notify"):
+                self.notify(self.t("upd_toast", v=chk.latest.version))
+        self.run(lambda ctx: um.check_for_updates(allow_prerelease=pre, opener=self.update_opener),
+                 "updates.auto_check", params={"prerelease": pre}, on_done=done)
 
     # ------------------------------------------------------------------ notifications
     def notify(self, message, kind="info"):

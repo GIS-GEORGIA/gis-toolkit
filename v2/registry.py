@@ -10,6 +10,7 @@ CATEGORIES = [
     ("analysis", {"ka": "ანალიზი და გაზომვა", "en": "Analysis & measurement"}),
     ("data", {"ka": "მონაცემთა გადატანა და კონვერტაცია", "en": "Data transfer & conversion"}),
     ("search", {"ka": "ძებნა და რუკები", "en": "Search & maps"}),
+    ("system", {"ka": "პარამეტრები და განახლებები", "en": "Settings & updates"}),
 ]
 
 
@@ -59,6 +60,10 @@ TOOLS = [
        "DWG/DXF-ის კონვერტაცია GIS ფორმატებში.", "Convert DWG/DXF to GIS formats.", key="dwg_convert"),
     _t("rename", "data", "სახელების გადარქმევა", "Rename → Latin",
        "ფაილების სახელების ტრანსლიტერაცია.", "Transliterate file names.", key="Rename → Latin"),
+    _t("updates", "system", "განახლებები", "Updates",
+       "ახალი ვერსიის შემოწმება GitHub Releases-დან, ჩამოტვირთვა, ინსტალაცია ბექაპით და უკან დაბრუნება.",
+       "Check GitHub Releases for a new version, download, install with backup, roll back.",
+       "native", page="v2.pages.updates_page:UpdatesPage"),
     _t("parcel_search", "search", "ნაკვეთის ძებნა", "Parcel search",
        "ნაკვეთის ძებნა კოდით / ნომრით.", "Find parcels by code/number.", key="Parcel search"),
     _t("map_services", "search", "რუკის სერვისები", "Map services",

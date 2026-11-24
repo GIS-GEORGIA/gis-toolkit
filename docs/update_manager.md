@@ -1,0 +1,41 @@
+# Update Manager (`tools/update_manager.py`)
+
+Checks the official GitHub Releases of `GIS-GEORGIA/gis-toolkit`, downloads and installs new versions **only with the user's consent**. Stdlib only, independent of the GIS modules and of any GUI.
+
+## Flow
+1. **Check** (`check_for_updates`) - never downloads, never raises (errors come back as `status="error"`). Stable: `/releases/latest`; with *Allow prerelease*: the highest version among the latest 15 non-draft releases.
+2. **Download** (`download_asset(..., confirmed=True)`) - official URLs only, through a `.part` file; a failed/cancelled/mismatching download leaves nothing behind.
+3. **Install** (`install_update(..., confirmed=True, verified=...)`) - extract to a staging folder, **backup**, apply file by file, **automatic rollback** on any failure.
+4. **Roll back** (`rollback_update(backup, confirmed=True)`) - restores replaced files, removes added ones.
+
+`confirmed=True` is enforced in the module itself (not only in the UI).
+
+## Which package
+`select_asset`: Windows x64 → `*.zip`; Linux → `*.tar.gz`, else `*.AppImage`, else `*.deb`. Only `.zip`/`.tar.gz` are installed automatically; `.deb`/`.AppImage` are downloaded and verified, then installed **manually** (no `sudo`, no admin rights, nothing downloaded is ever executed).
+
+## Verification
+| Check | Behaviour |
+|---|---|
+| SHA256 | from the GitHub API `digest`, `<asset>.sha256` or `SHA256SUMS`; mismatch → file deleted, `checksum` error |
+| No checksum published | download works but the package is **unverified**: installing needs `allow_unverified=True` (the UI asks a second, explicit question) |
+| Signed manifest | `SHA256SUMS` + `SHA256SUMS.sig` (Ed25519) is verified when `PUBLIC_KEY_B64` in `update_manager.py` is set (needs `cryptography`). Not configured yet → releases are reported as unsigned |
+| Source | API only `api.github.com/repos/GIS-GEORGIA/gis-toolkit/...`; downloads only `github.com/GIS-GEORGIA/gis-toolkit/releases/download/...`; redirects only to https GitHub hosts; assets with foreign URLs are ignored |
+| Archive | extracted by hand: no absolute paths, `..`, drive letters, symlinks/hardlinks/devices; size and file-count limits |
+
+## Safety of the install
+- User data is **never overwritten**: `config.txt`, `gis_box_settings.json`, `GIS_BOX_config/`, `shp_coords_templates.txt`, `map_services.txt`, `*.mdb`, logs, `.venv` (see `PRESERVE`).
+- Backup = full copy of the application folder (without `.git`, `.venv`, `build`, `dist`, logs) + `.update_manifest.json`, stored in the per-user folder (`.../GIS_BOX/update_backups`), newest 3 kept.
+- A git checkout (a `.git` folder) is **refused** - use `git pull` there.
+- Files are replaced atomically one by one (temp file + `os.replace`).
+
+## Settings (Updates page in V2)
+Automatic check ON/OFF (default **OFF**, at most once a day, only shows a notification), notify ON/OFF, allow prereleases, installed/latest version, release date, last check time, release notes. Stored in `v2_settings.json` → `updates`.
+
+## Release assets (CI)
+`.github/workflows/release.yml` now publishes a `<asset>.sha256` next to every package. The workflow still only runs on a `v*` tag; **nothing is released automatically by this work**.
+
+## Known limitations (honest)
+- **A running Windows `GIS_BOX.exe` cannot replace its own files** (they are locked). The installer detects this, rolls back and reports "files are in use". Apply-on-restart / helper process is **not implemented yet**; until then update a Windows exe install by closing the app and extracting the verified ZIP by hand (the file is already downloaded and checked in `.../GIS_BOX/updates`). Source/portable-Python installs are not affected.
+- Signature verification is implemented and tested but inactive until a public key is published in `PUBLIC_KEY_B64` and releases carry `.sig` files.
+- Files removed in a newer version are not deleted from the old installation.
+- The updater was verified with mocked network traffic only; it has not yet been exercised against a real published V2 release.

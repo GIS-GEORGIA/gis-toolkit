@@ -24,3 +24,9 @@ def _isolated_log_dir(tmp_path_factory, monkeypatch):
     lm.set_manager(None)
     yield
     lm.set_manager(None)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_v2_dir(tmp_path_factory, monkeypatch):
+    """V2 settings/updates/backups must never touch the real per-user folder in tests."""
+    monkeypatch.setenv("GIS_BOX_V2_DIR", str(tmp_path_factory.mktemp("gisbox_v2")))

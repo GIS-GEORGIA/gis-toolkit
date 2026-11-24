@@ -30,9 +30,18 @@ jobs:
       - name: Zip onedir
         run: Compress-Archive -Path dist/GIS_BOX/* -DestinationPath GIS_BOX-windows-x64.zip
 
+      # SHA256 ფაილი თითო პაკეტზე (<პაკეტი>.sha256) — განახლების მენეჯერი მას ამოწმებს
+      - name: SHA256 checksum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash GIS_BOX-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$h  GIS_BOX-windows-x64.zip" | Out-File -Encoding ascii GIS_BOX-windows-x64.zip.sha256
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: GIS_BOX-windows-x64.zip
+          files: |
+            GIS_BOX-windows-x64.zip
+            GIS_BOX-windows-x64.zip.sha256
 
   # ---------- Linux: tar.gz + deb + rpm + AppImage ----------
   linux:
@@ -100,6 +109,13 @@ jobs:
           chmod +x /tmp/appimagetool
           /tmp/appimagetool --appimage-extract-and-run AppDir GIS_BOX-linux-x86_64.AppImage
 
+      # SHA256 ფაილი თითო პაკეტზე (<პაკეტი>.sha256) — განახლების მენეჯერი მას ამოწმებს
+      - name: SHA256 checksums
+        run: |
+          for f in GIS_BOX-linux-x64.tar.gz GIS_BOX-linux-x64.deb GIS_BOX-linux-x64.rpm GIS_BOX-linux-x86_64.AppImage; do
+            [ -f "$f" ] && sha256sum "$f" > "$f.sha256" || true
+          done
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -107,5 +123,9 @@ jobs:
             GIS_BOX-linux-x64.deb
             GIS_BOX-linux-x64.rpm
             GIS_BOX-linux-x86_64.AppImage
+            GIS_BOX-linux-x64.tar.gz.sha256
+            GIS_BOX-linux-x64.deb.sha256
+            GIS_BOX-linux-x64.rpm.sha256
+            GIS_BOX-linux-x86_64.AppImage.sha256
         # AppImage შესაძლოა არ შეიქმნას (best-effort) — action ცარიელ ფაილს გამოტოვებს
         continue-on-error: true

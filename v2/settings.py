@@ -14,7 +14,8 @@ DEFAULTS = {
     "recent_tools": [],
     "recent_files": [],
     "window": {"w": 1180, "h": 760},
-    "updates": {"auto_check": False, "notify": True, "prerelease": False, "last_check": ""},
+    "updates": {"auto_check": False, "notify": True, "prerelease": False, "last_check": "",
+                "latest_version": "", "latest_published": ""},
 }
 
 
