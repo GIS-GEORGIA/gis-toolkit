@@ -318,13 +318,18 @@ def _read_dxf_via_ezdxf(path, log):
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=None)
 
 
-def _normalize_crs(gdf, target_epsg):
+def _normalize_crs(gdf, target_epsg, log=None):
+    """Same behaviour as before, but every CRS change is REPORTED (no silent assumptions)."""
     if not target_epsg:
         return gdf
+    log = log or (lambda _m: None)
     target = "EPSG:{}".format(int(target_epsg))
     if gdf.crs is None:
+        log("⚠ source has NO CRS - the selected {} is ASSUMED (coordinates not transformed). "
+            "Check that the drawing really is in this system.".format(target))
         return gdf.set_crs(target, allow_override=True)
     if str(gdf.crs) != target:
+        log("ℹ reprojecting {} -> {}".format(gdf.crs.to_string(), target))
         return gdf.to_crs(target)
     return gdf
 
@@ -441,7 +446,7 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
             buckets = _split_by_geom_type(gdf)
             multi = len(buckets) > 1
             for bucket, sub in buckets.items():
-                sub = _normalize_crs(sub, target_epsg)
+                sub = _normalize_crs(sub, target_epsg, log)
                 name = sanitize(lyr_name)
                 if multi:
                     name += "_" + bucket
@@ -470,7 +475,7 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
         else:
             parts = [(sanitize(lyr_name), gdf)]
         for name, sub in parts:
-            sub = _normalize_crs(sub, target_epsg)
+            sub = _normalize_crs(sub, target_epsg, log)
             sub.to_file(out_path, layer=name, driver=driver,
                        mode="w" if first else "a")
             first = False

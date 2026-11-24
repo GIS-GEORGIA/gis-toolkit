@@ -168,6 +168,19 @@ def shallow_crossings(parcels, zones, points, threshold_deg=15.0):
     return out
 
 
+def require_metric_crs(crs):
+    """Areas are reported in m2 - refuse a geographic CRS (degrees would be labelled as m2).
+    ``None`` (no CRS info) is allowed for backward compatibility: the units cannot be known."""
+    if crs is None:
+        return
+    from tools.crs_manager import describe
+    info = describe(crs)
+    if info.is_geographic:
+        raise ValueError("The parcel layer is in a geographic CRS ({}, units: {}). Areas and distances must "
+                         "be computed in a projected metric CRS (e.g. EPSG:32637 / EPSG:32638) - reproject "
+                         "the layers first.".format(info.label(), info.unit))
+
+
 def clip_areas(parcels, zones):
     """ნაკვეთის საერთო ფართი, ზონასთან გადაკვეთილი („მოჭრილი“) ნაწილი და დარჩენილი ნაწილი.
 

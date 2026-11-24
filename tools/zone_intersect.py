@@ -637,6 +637,8 @@ class ZoneIntersectTool(ToolFrame):
 
             # CRS — ზონა ნაკვეთის სისტემაში
             target_crs = pgdf.crs
+            from tools.zone_intersect_core import require_metric_crs
+            require_metric_crs(target_crs)
             if target_crs is not None and zgdf.crs is not None \
                     and zgdf.crs != target_crs:
                 zgdf = zgdf.to_crs(target_crs)

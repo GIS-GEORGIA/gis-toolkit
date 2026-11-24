@@ -382,14 +382,29 @@ def reproject_file(src, out, target, layer=None):
 def ensure_metric(gdf, epsg=None):
     """CRS for metric work on ``gdf``: returns ``(gdf_in_metric_crs, CrsReport|None)``.
 
-    Already-metric data is returned unchanged (report ``None``). Otherwise it is reprojected to
+    Already-metric data is returned unchanged (report ``None``) unless the user explicitly chose a
+    different ``epsg``. Otherwise it is reprojected to
     ``epsg`` (user choice) or - if not given - to the suggested UTM zone, and the report states so
     explicitly (no silent CRS change)."""
     if gdf.crs is None:
         raise CrsError("missing_crs", "cannot measure: CRS is not defined")
-    if describe(gdf.crs).is_metric:
+    if describe(gdf.crs).is_metric and (epsg is None or compare(gdf.crs, epsg)):
         return gdf, None
     if epsg is None:
         lonlat = tuple(float(x) for x in gdf.to_crs(4326).total_bounds)
         epsg = metric_candidates(lonlat)[0]["epsg"]
     return reproject_gdf(gdf, epsg)
+
+
+def measure(gdf, epsg=None):
+    """Areas/lengths in an explicit metric CRS. Returns a dict with the CRS used, units and the
+    reprojection report (``None`` if the data already was metric). Never measures in degrees."""
+    metric, rep = ensure_metric(gdf, epsg)
+    geom = metric.geometry
+    return {
+        "crs": describe(metric.crs).label(),
+        "unit": "m",
+        "area_m2": geom.area,
+        "length_m": geom.length,
+        "report": rep,
+    }

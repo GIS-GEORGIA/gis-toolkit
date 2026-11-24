@@ -256,8 +256,10 @@ def collect_to_geopackage(files, out_path, target_epsg=None,
         if target is None:
             return gdf
         if gdf.crs is not None and gdf.crs != target:
+            log("ℹ reprojecting {} -> {}".format(gdf.crs.to_string(), target))
             return gdf.to_crs(target)
         if gdf.crs is None:
+            log("⚠ part without CRS: the target CRS is ASSUMED (coordinates not transformed)")
             return gdf.set_crs(target, allow_override=True)
         return gdf
 

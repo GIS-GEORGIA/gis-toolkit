@@ -24,3 +24,13 @@ GUI-independent module for safe coordinate reference system handling.
 - Raster detection needs `rasterio` (optional).
 - Transformation accuracy depends on the PROJ grids installed; missing grids are reported as a warning.
 - Z/M and compound CRS are described but not specially handled.
+
+## Measurement audit (V2 stage 3)
+| Tool | Finding | Status |
+|---|---|---|
+| Layer analysis (`shp_analysis`) | already converts non-UTM data to UTM 37N/38N and shows `EPSG:x → EPSG:y`; units m / m² | OK, covered by accuracy tests |
+| Line buffer | works only in EPSG:32637/32638, asks before converting | OK |
+| Zone intersection | areas computed in the parcel CRS; a geographic CRS would give "m²" in square degrees | **fixed**: refuses geographic CRS (`require_metric_crs`); layers without CRS info still allowed (units unknowable) |
+| Shp → coordinates | failed reprojection to UTM was swallowed, leaving unprojected coordinates labelled UTM | **fixed**: now raises a clear error |
+| DWG convert / Geometry collect | silently assigned the chosen CRS to data without CRS | behaviour kept, now **logged** (`ASSUMED` / `reprojecting a -> b`) |
+| `crs_manager.measure()` | new helper: area/length in an explicit metric CRS with the CRS label, unit and reprojection report | new |

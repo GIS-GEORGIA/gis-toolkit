@@ -604,8 +604,9 @@ class ShpCoordsTool(ToolFrame):
         if gdf.crs is not None:
             try:
                 gdf = gdf.to_crs(epsg=32600 + zone)
-            except Exception:
-                pass
+            except Exception as e:
+                # never continue with coordinates still in the source CRS labelled as UTM
+                raise RuntimeError("reprojection to EPSG:{} failed: {}".format(32600 + zone, e)) from e
         idcol = next((c for c in gdf.columns if c.lower() == "id"), None)
         pts = []
         for _, row in gdf.iterrows():
