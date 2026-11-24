@@ -31,7 +31,12 @@ if [ "${1:-}" != "--no-deps" ]; then
     fi
     echo "→ ვაყენებ დამოკიდებულებებს (geopandas, openpyxl, …) — შეიძლება რამდენიმე წუთი დასჭირდეს"
     "$DIR/.venv/bin/python" -m pip install --upgrade pip
-    "$DIR/.venv/bin/python" -m pip install -r "$DIR/requirements.txt"
+    "$DIR/.venv/bin/python" -m pip install -r "$DIR/requirements-core.txt"
+    if ! "$DIR/.venv/bin/python" -m pip install -r "$DIR/requirements-optional.txt"; then
+        echo "⚠ ზოგი არასავალდებულო პაკეტი ვერ დაყენდა — ძირითადი ხელსაწყოები მაინც იმუშავებს."
+    fi
+    echo "→ გარემოს დიაგნოსტიკა:"
+    "$DIR/.venv/bin/python" -m tools.env_check || echo "⚠ ზემოთ მითითებული აუცილებელი კომპონენტები აკლია."
 fi
 
 chmod +x "$DIR/GIS_BOX.sh"

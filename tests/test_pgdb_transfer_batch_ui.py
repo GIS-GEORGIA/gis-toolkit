@@ -25,7 +25,7 @@ def test_batch(tmp_path, monkeypatch):
     fr.backup_var.set(False); fr.copyall_var.set(True)
     t0 = time.time()
     def poll():
-        if time.time() - t0 > 90 or (time.time() - t0 > 3 and not (fr.busy or fr._year_queue or fr._pending_start)):
+        if time.time() - t0 > 90 or (len(asks) >= 3 and time.time() - t0 > 3 and not (fr.busy or fr._year_queue or fr._pending_start)):
             app.after(1500, app.quit)
         else:
             app.after(200, poll)
