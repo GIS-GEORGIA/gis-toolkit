@@ -95,3 +95,54 @@ def test_final_database_is_a_new_file_and_destination_untouched(tmp_path, monkey
     fc = fx.counts(fp)
     assert fc["point"][0] == 3 and fc["line"][0] == 1, fc
     assert not [f for f in os.listdir(tmp_path) if "_backup_" in f]       # ბექაპი საჭირო არაა
+
+
+def test_years_are_tick_boxes_and_only_ticked_years_are_transferred(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIS_BOX_DATA_DIR", str(tmp_path / "data"))
+    import gis_box
+    monkeypatch.setattr(gis_box, "SETTINGS_FILE", str(tmp_path / "s.json"))
+    app = gis_box.GisBoxApp(); app.withdraw()
+    src, dst = fx.make_db(tmp_path, "src.mdb"), fx.make_db(tmp_path, "dst.mdb")
+    fx.seed(src, "point", [{"no": "A", "date": d(2024, 1, 1)}, {"no": "B", "date": d(2025, 1, 1)},
+                           {"no": "C", "date": d(2026, 1, 1)}])
+    from tools import pgdb_transfer as T
+    shown, asks = [], []
+    for n in ("showinfo", "showwarning", "showerror"):
+        monkeypatch.setattr(T.messagebox, n, lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(T.messagebox, "askyesno", lambda *a, **k: asks.append(a) or True)
+    fr = app.show_tool_by_tid("db_transfer")
+    fr.src_var.set(src); fr.dst_var.set(dst); fr.year_var.set("2025")
+    fr.backup_var.set(False)
+    fr._check()
+    t0 = time.time()
+
+    def poll():
+        if fr._infos is not None and fr.year_checks:
+            app.quit()
+        elif time.time() - t0 > 60:
+            app.quit()
+        else:
+            app.after(200, poll)
+    app.after(200, poll)
+    app.mainloop()
+    assert sorted(fr.year_checks) == [2024, 2025, 2026]
+    assert [y for y, v in fr.year_checks.items() if v.get()] == [2025]       # წინასწარ მონიშნულია ჩაწერილი წელი
+    fr.year_checks[2026].set(True); fr._years_changed()
+    assert fr.year_var.get() == "2025, 2026" and not fr.all_years_var.get()
+    fr.all_years_var.set(True); fr._years_all_toggled()
+    assert fr.year_var.get() == "2024, 2025, 2026"
+    fr.year_checks[2024].set(False); fr._years_changed()
+    assert fr.year_var.get() == "2025, 2026"
+
+    t0 = time.time()
+
+    def poll2():
+        if time.time() - t0 > 90 or (len(shown) >= 1 and time.time() - t0 > 3 and not (fr.busy or fr._year_queue or fr._pending_start)):
+            app.after(1500, app.quit)
+        else:
+            app.after(200, poll2)
+    fr._start()
+    app.after(200, poll2)
+    app.mainloop()
+    assert fx.counts(dst)["point"][0] == 2                                   # 2024 არ გადავიდა
+    app.destroy()

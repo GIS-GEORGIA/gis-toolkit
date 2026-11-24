@@ -134,6 +134,10 @@ DTR = {
                   "ka": "საბოლოო ბაზა (ახალი ფაილი; მიმღები ხელუხლებელია):\n   {p}"},
     "st_copy": {"en": "Creating the new final database (copy)…", "ka": "იქმნება ახალი საბოლოო ბაზა (ასლი)…"},
     "code_copy_failed": {"en": "Could not create the new final database: {d}", "ka": "ახალი საბოლოო ბაზის შექმნა ვერ მოხერხდა: {d}"},
+    "years_hint": {"en": "Years found in the source appear here as tick boxes after \"Check databases\".",
+                   "ka": "წყაროში არსებული წლები აქ თოლიებად გამოჩნდება „ბაზების შემოწმების“ შემდეგ."},
+    "years_pick": {"en": "Years to transfer (tick):", "ka": "გადასატანი წლები (მონიშნე):"},
+    "years_all": {"en": "All years", "ka": "ყველა წელი"},
     "btn_merge": {"en": "Merge all years into ONE database…", "ka": "ყველა წლის ერთ ბაზაში გაერთიანება…"},
     "tip_merge": {"en": "Choose the per-year databases (e.g. the *_transferred_<year>_*.mdb files) - all their records are "
                         "combined into ONE brand-new database (points, lines, polygons). Records with the same werilis_no "
@@ -374,6 +378,11 @@ class PgdbTransferTool(ToolFrame):
         self.backup_var = tk.BooleanVar(value=st.get("backup", saved.get("backup", True)))
         add_tip(ttk.Checkbutton(row, text=self.tr("backup"), variable=self.backup_var),
                 self.tr("tip_backup")).pack(side="left")
+        self.years_box = ttk.Frame(opts)
+        self.years_box.pack(fill="x", padx=8, pady=(0, 6))
+        self.year_checks = {}
+        self.all_years_var = tk.BooleanVar(value=False)
+        ttk.Label(self.years_box, text=self.tr("years_hint"), foreground=pal["muted"]).pack(anchor="w")
         row3 = ttk.Frame(opts)
         row3.pack(fill="x", padx=8, pady=(0, 6))
         self.copyset_var = tk.BooleanVar(value=st.get("copyset", saved.get("copyset", False)))
@@ -596,7 +605,13 @@ class PgdbTransferTool(ToolFrame):
                 core.check_writable(dst)
             except core.TransferError as e:
                 locked = e
-            self.msg_queue.put(("checked", (si, di, mapping, amb, locked)))
+            years = []
+            if mapping:
+                try:
+                    years = core.source_years(src, mapping)
+                except Exception:                      # noqa: BLE001  (წლების სია დამხმარეა; ხელით შეყვანა მუშაობს)
+                    years = []
+            self.msg_queue.put(("checked", (si, di, mapping, amb, locked, years)))
         except ImportError as e:
             self.msg_queue.put(("error", core.TransferError("no_pyodbc", str(e))))
         except core.TransferError as e:
@@ -605,8 +620,9 @@ class PgdbTransferTool(ToolFrame):
             self.msg_queue.put(("error", core.friendly_error(e)))
 
     def _on_checked(self, payload):
-        si, di, mapping, amb, locked = payload
+        si, di, mapping, amb, locked, years = payload
         self._infos = (si, di)
+        self._build_years(years)
         self._build_mapping(si, di, mapping, amb)
         lines = [self.tr("chk_ok")]
         for k in core.KINDS:
@@ -635,6 +651,41 @@ class PgdbTransferTool(ToolFrame):
         self._set_text(self.summary, "\n".join(lines))
         self.status.set(self.tr("ready"))
         self._set_busy(False)
+
+    def _build_years(self, years):
+        """წყაროში ნაპოვნი წლები → მოსანიშნი თოლიები; არჩევანი ``year_var``-ში იწერება (ხელით შეყვანაც მუშაობს)."""
+        for w in self.years_box.winfo_children():
+            w.destroy()
+        self.year_checks = {}
+        if not years:
+            ttk.Label(self.years_box, text=self.tr("years_hint"), foreground=self.app.palette["muted"]).pack(anchor="w")
+            return
+        try:
+            cur = core.parse_years(self.year_var.get())
+        except ValueError:
+            cur = []
+        chosen = set(years) if cur == "all" else set(cur) & set(years)
+        ttk.Label(self.years_box, text=self.tr("years_pick"), font=(UI_FONT, 9, "bold")).grid(
+            row=0, column=0, columnspan=12, sticky="w")
+        self.all_years_var = tk.BooleanVar(value=(chosen == set(years)))
+        ttk.Checkbutton(self.years_box, text=self.tr("years_all"), variable=self.all_years_var,
+                        command=self._years_all_toggled).grid(row=1, column=0, sticky="w", padx=(0, 12))
+        for i, y in enumerate(years):
+            var = tk.BooleanVar(value=(y in chosen))
+            self.year_checks[y] = var
+            ttk.Checkbutton(self.years_box, text=str(y), variable=var, command=self._years_changed).grid(
+                row=1 + (i + 1) // 10, column=(i + 1) % 10, sticky="w", padx=(0, 12))
+        self._years_changed()
+
+    def _years_all_toggled(self):
+        for v in self.year_checks.values():
+            v.set(self.all_years_var.get())
+        self._years_changed()
+
+    def _years_changed(self):
+        sel = sorted(y for y, v in self.year_checks.items() if v.get())
+        self.all_years_var.set(bool(sel) and len(sel) == len(self.year_checks))
+        self.year_var.set(", ".join(str(y) for y in sel))      # ცარიელი → „მიუთითე წელი“ გაფრთხილება
 
     def _build_mapping(self, si, di, mapping, amb):
         for w in self.map_box.winfo_children():
