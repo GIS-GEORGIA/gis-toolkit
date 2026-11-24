@@ -4,6 +4,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Qt must be loaded BEFORE geopandas/shapely/pyogrio (the other order crashes with an access
+# violation on Windows). Importing it first here keeps the whole test session safe.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+try:
+    import PySide6.QtCore  # noqa: F401
+except ImportError:
+    pass
+
 import pytest
 
 

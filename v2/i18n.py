@@ -1,0 +1,78 @@
+"""V2 shell strings (Georgian / English)."""
+
+S = {
+    "app": {"ka": "GIS_BOX", "en": "GIS_BOX"},
+    "search": {"ka": "ძებნა…", "en": "Search…"},
+    "home": {"ka": "მთავარი", "en": "Home"},
+    "favorites": {"ka": "ფავორიტები", "en": "Favorites"},
+    "recent": {"ka": "ბოლოს გამოყენებული", "en": "Recently used"},
+    "recent_files": {"ka": "ბოლოს გახსნილი ფაილები", "en": "Recently opened files"},
+    "none": {"ka": "ცარიელია", "en": "Empty"},
+    "welcome": {"ka": "კეთილი იყოს შენი მობრძანება GIS_BOX-ში", "en": "Welcome to GIS_BOX"},
+    "welcome_sub": {"ka": "აირჩიე ხელსაწყო მარცხენა მენიუდან ან მოძებნე სახელით.",
+                    "en": "Pick a tool from the sidebar or search by name."},
+    "version": {"ka": "ვერსია", "en": "Version"},
+    "menu_view": {"ka": "ხედი", "en": "View"},
+    "menu_theme": {"ka": "თემა", "en": "Theme"},
+    "theme_light": {"ka": "ღია", "en": "Light"},
+    "theme_dark": {"ka": "მუქი", "en": "Dark"},
+    "menu_lang": {"ka": "ენა", "en": "Language"},
+    "menu_tools": {"ka": "სერვისი", "en": "Service"},
+    "open_logs": {"ka": "ლოგების საქაღალდის გახსნა", "en": "Open logs folder"},
+    "export_diag": {"ka": "დიაგნოსტიკური ანგარიშის ექსპორტი…", "en": "Export diagnostic report…"},
+    "env_check": {"ka": "გარემოს შემოწმება", "en": "Environment check"},
+    "menu_help": {"ka": "დახმარება", "en": "Help"},
+    "about": {"ka": "პროგრამის შესახებ", "en": "About"},
+    "fav_add": {"ka": "☆ ფავორიტებში დამატება", "en": "☆ Add to favorites"},
+    "fav_remove": {"ka": "★ ფავორიტებიდან მოხსნა", "en": "★ Remove from favorites"},
+    "cancel": {"ka": "გაუქმება", "en": "Cancel"},
+    "ready": {"ka": "მზადაა", "en": "Ready"},
+    "working": {"ka": "მიმდინარეობს…", "en": "Working…"},
+    "done": {"ka": "დასრულდა", "en": "Done"},
+    "failed": {"ka": "შეცდომა", "en": "Error"},
+    "cancelled": {"ka": "გაუქმდა", "en": "Cancelled"},
+    "legacy_note": {"ka": "ეს ხელსაწყო ჯერ კლასიკურ ფანჯარაშია (tkinter). V2 ინტერფეისზე გადატანა მიმდინარეობს — ფუნქციონალი უცვლელია.",
+                    "en": "This tool still runs in the classic window (tkinter). It is being ported to the V2 interface - functionality is unchanged."},
+    "open_classic": {"ka": "გახსნა კლასიკურ ფანჯარაში", "en": "Open in classic window"},
+    "launch_failed": {"ka": "ხელსაწყოს გაშვება ვერ მოხერხდა:", "en": "Could not start the tool:"},
+    "opened_classic": {"ka": "გაიხსნა კლასიკურ ფანჯარაში", "en": "Opened in the classic window"},
+    "diag_saved": {"ka": "ანგარიში შენახულია:", "en": "Report saved:"},
+    "diag_exists": {"ka": "ფაილი უკვე არსებობს — აირჩიე სხვა სახელი.", "en": "File already exists - choose another name."},
+    "about_text": {"ka": "GIS_BOX — GIS ხელსაწყოების ნაკრები საქართველოსთვის.", "en": "GIS_BOX - a GIS toolkit."},
+    # --- CRS page
+    "crs_file": {"ka": "ფაილი", "en": "File"},
+    "browse": {"ka": "არჩევა…", "en": "Browse…"},
+    "crs_detect": {"ka": "CRS-ის აღმოჩენა", "en": "Detect CRS"},
+    "crs_info": {"ka": "კოორდინატთა სისტემა", "en": "Coordinate system"},
+    "crs_target": {"ka": "სამიზნე CRS", "en": "Target CRS"},
+    "crs_custom": {"ka": "ან EPSG კოდი", "en": "or EPSG code"},
+    "crs_output": {"ka": "გამოსავალი (ახალი ფაილი)", "en": "Output (NEW file)"},
+    "crs_reproject": {"ka": "გადაყვანა (reproject) → ახალ ფაილში", "en": "Reproject → new file"},
+    "crs_assign": {"ka": "CRS-ის მინიჭება (ჭდე) → ახალ ფაილში", "en": "Assign CRS (label) → new file"},
+    "crs_assign_confirm": {
+        "ka": "CRS-ის მინიჭება კოორდინატებს არ ცვლის — მხოლოდ ჭდეს ადებს.\n\nწყარო: {src}\nმისანიჭებელი: {crs}\n\nდარწმუნებული ხარ, რომ მონაცემები ნამდვილად ამ სისტემაშია?",
+        "en": "Assigning a CRS does NOT change coordinates - it only sets the label.\n\nSource: {src}\nTo assign: {crs}\n\nAre you sure the data really is in this system?"},
+    "crs_need_file": {"ka": "ჯერ აირჩიე ფაილი.", "en": "Choose a file first."},
+    "crs_need_target": {"ka": "აირჩიე ან შეიყვანე სამიზნე CRS.", "en": "Choose or enter a target CRS."},
+    "crs_need_out": {"ka": "მიუთითე გამოსავალი ფაილი.", "en": "Specify the output file."},
+    "crs_suggest": {"ka": "შესაძლო CRS-ები (მხოლოდ ვარაუდი, არა საბოლოო იდენტიფიკაცია):",
+                    "en": "Possible CRS (a guess only, not a definitive identification):"},
+    "crs_use_candidate": {"ka": "სამიზნედ ამ ვარაუდის გამოყენება", "en": "Use as target"},
+    "crs_report": {"ka": "ანგარიში", "en": "Report"},
+    "crs_name": {"ka": "სახელი", "en": "Name"},
+    "crs_epsg": {"ka": "EPSG", "en": "EPSG"},
+    "crs_kind": {"ka": "ტიპი", "en": "Type"},
+    "crs_datum": {"ka": "დატუმი", "en": "Datum"},
+    "crs_unit": {"ka": "ერთეული", "en": "Unit"},
+    "crs_proj": {"ka": "პროექცია", "en": "Projection"},
+    "crs_bounds": {"ka": "საზღვრები", "en": "Bounds"},
+    "crs_missing": {"ka": "CRS არ არის განსაზღვრული", "en": "CRS is not defined"},
+}
+
+
+def tr(lang, key, **fmt):
+    d = S.get(key)
+    if not d:
+        return key
+    s = d.get(lang) or d.get("en") or key
+    return s.format(**fmt) if fmt else s

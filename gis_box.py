@@ -568,6 +568,14 @@ class GisBoxApp(tk.Tk):
                 return self.frames[i]
         return None
 
+    def show_tool_by_key(self, key):
+        """ხელსაწყოზე გადართვა სტაბილური key-ით (tid ან ინგლისური სახელი) — V2 გარსის ``--tool`` არგუმენტისთვის."""
+        for i, spec in enumerate(self.tool_specs):
+            if spec.get("key") == key or spec.get("tid") == key:
+                self.show(i)
+                return self.frames[i]
+        return None
+
     def _make_map_tool(self, master):
         from tools.map_services import MapServicesTool
         return MapServicesTool(master, self)
@@ -1057,4 +1065,11 @@ if __name__ == "__main__":
         from tools.gdb2postgis_cli import run_headless
         sys.exit(run_headless())
     _enable_dpi_awareness()
-    GisBoxApp().mainloop()
+    _app = GisBoxApp()
+    if "--tool" in sys.argv:                       # V2 გარსიდან: კონკრეტული ხელსაწყოს პირდაპირ გახსნა
+        try:
+            _key = sys.argv[sys.argv.index("--tool") + 1]
+            _app.after(300, lambda: _app.show_tool_by_key(_key))
+        except IndexError:
+            pass
+    _app.mainloop()
