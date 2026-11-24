@@ -231,7 +231,7 @@ tool via “💾 Remember”). The tool switches between them via the dropdown.
 GIS_BOX/
 ├─ gis_box.py                # მთავარი აპლიკაცია / main app (sidebar + lazy loading)
 ├─ gis_box_v2.py             # V2 შესასვლელი (PySide6) / V2 entry point
-├─ v2/                       # V2 გარსი: main_window, workers (QThreadPool), registry, settings, themes, pages/
+├─ v2/                       # V2 გარსი: main_window, workers (thread + Qt signals), registry, settings, themes, pages/
 ├─ tools/
 │  ├─ version.py             # ერთადერთი ვერსიის განსაზღვრა (SemVer)
 │  ├─ env_check.py           # გარემოს დიაგნოსტიკა

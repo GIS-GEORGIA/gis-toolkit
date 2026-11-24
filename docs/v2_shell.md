@@ -19,7 +19,7 @@ Needs `PySide6` (`requirements-optional.txt`). The PyInstaller build contains it
 |---|---|
 | `v2/registry.py` | tool list, categories, bilingual names/descriptions, how each tool opens (no Qt) |
 | `v2/settings.py` | settings, favorites, recents (no Qt) |
-| `v2/workers.py` | `run_task()`: GIS function in `QThreadPool`, progress/cancel, callbacks delivered in the GUI thread, every task recorded in the operation history |
+| `v2/workers.py` | `run_task()`: GIS function in a plain Python thread (NOT `QThreadPool`, see below), progress/cancel, callbacks delivered in the GUI thread, every task recorded in the operation history |
 | `v2/main_window.py` | window, sidebar, pages, notifications |
 | `v2/themes.py`, `v2/i18n.py` | theme palettes + stylesheet, UI strings |
 | `v2/pages/*.py` | native tool pages (first one: CRS Manager) |
@@ -34,6 +34,9 @@ GIS logic stays in `tools/*_core.py`; pages only call it through `shell.run(...)
 | all other 12 tools | open in the classic window from the V2 sidebar; being ported one by one |
 
 To port a tool: add a page class in `v2/pages/`, set `kind="native"` and `page="module:Class"` in `registry.py`.
+
+## Why not QThreadPool
+PySide creates a fresh Python thread state for every `QRunnable.run`. pyproj keeps its PROJ context in thread-local storage, so a `detect` task followed by a `reproject` task crashed the process (access violation on Windows, segmentation fault on Linux) with pyproj 3.7 / geopandas 1.2 - found by CI, reproduced locally, gone with a plain `threading.Thread`. Results still reach the GUI thread through queued Qt signals. Do not move GIS work back to `QThreadPool` without re-running `tests/test_v2_shell.py` against the newest geopandas/pyproj.
 
 ## Known limitations
 - Qt must be imported **before** geopandas/shapely on Windows (the other order crashes with an access violation). `gis_box_v2.py` and `conftest.py` already do this - keep it in new entry points.

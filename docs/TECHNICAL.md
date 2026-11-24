@@ -727,7 +727,7 @@ V2 არის **დამატება**, არა ჩანაცვლე
 gis_box_v2.py            შესასვლელი (Qt იმპორტდება პირველად; --selftest)
 v2/                      PySide6 გარსი — მხოლოდ UI და ორკესტრაცია
   main_window.py         გვერდითი მენიუ, გვერდები, სტატუსის ზოლი (პროგრესი+გაუქმება), toast-ები, თემა/ენა
-  workers.py             run_task(): QRunnable + QThreadPool, callbacks GUI ნაკადში (QObject-ის ხიდით)
+  workers.py             run_task(): ჩვეულებრივი Python thread, callbacks GUI ნაკადში (QObject-ის ხიდით)
   registry.py            ხელსაწყოების სია (kind=native|legacy), კატეგორიები, ძებნა — Qt-ის გარეშე
   settings.py            პარამეტრები/ფავორიტები/ბოლოს გამოყენებული — Qt-ის გარეშე, ატომური ჩაწერა
   pages/                 ნატიური გვერდები: crs_page, updates_page
@@ -742,7 +742,7 @@ tools/                   GUI-ს გარეშე ლოგიკა (ხე�
 წესი: გვერდი UI-ს ხატავს და `shell.run(fn, ...)`-ით იძახებს `tools/*`-ის ფუნქციას; GIS ლოგიკა გვერდში არ ცხოვრობს.
 
 ### 17.2 პარალელიზმი
-`run_task` ახორციელებს `fn(ctx)`-ს thread pool-ში; `ctx.progress/log/check_cancelled`. შედეგი/შეცდომა/გაუქმება მიეწოდება GUI ნაკადში `QObject`-ის slot-ებით
+`run_task` ახორციელებს `fn(ctx)`-ს ცალკე `threading.Thread`-ში (**არა** `QThreadPool`-ში — იხ. ქვემოთ); `ctx.progress/log/check_cancelled`. შედეგი/შეცდომა/გაუქმება მიეწოდება GUI ნაკადში `QObject`-ის slot-ებით
 (lambda-ს პირდაპირი კავშირი worker ნაკადში გაეშვებოდა). ერთდროულად ერთი ამოცანა (`shell.task`). ყოველი ამოცანა იწერება ოპერაციების ისტორიაში.
 **არ შეიძლება** GUI ობიექტებთან მუშაობა `fn`-ში.
 

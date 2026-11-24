@@ -299,7 +299,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ background tasks
     def run(self, fn, tool, inputs=None, params=None, on_done=None, success_msg=None):
-        """Run a GIS function in the thread pool with progress, cancel and notifications."""
+        """Run a GIS function in a worker thread with progress, cancel and notifications."""
         if self.task is not None:
             return None
 

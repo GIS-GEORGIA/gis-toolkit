@@ -1,4 +1,11 @@
-"""Background processing: QRunnable tasks on QThreadPool with progress, cancel and operation history.
+"""Background processing: tasks in worker threads with progress, cancel and operation history.
+
+Why a plain ``threading.Thread`` and not ``QThreadPool``: PySide creates a fresh Python thread state for
+every ``QRunnable.run`` call. pyproj keeps its PROJ context in thread-local storage, so objects/contexts
+from one run were left dangling for the next run on the same pool thread and the process crashed with an
+access violation / segmentation fault (reproduced with pyproj 3.7 + geopandas 1.2: a ``detect`` task
+followed by a ``reproject`` task). A normal Python thread has a stable thread state for the whole task.
+Results are still delivered to the GUI thread through queued Qt signals.
 
 The GIS function runs in a worker thread and receives a :class:`TaskContext`::
 
@@ -17,7 +24,7 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot
 
 
 class Cancelled(Exception):
@@ -97,10 +104,8 @@ class _Bridge(QObject):
         self._fin(self)
 
 
-class Task(QRunnable):
+class Task:
     def __init__(self, fn, tool, inputs=None, params=None):
-        super().__init__()
-        self.setAutoDelete(False)              # kept alive until its signals were delivered
         self.fn, self.tool = fn, tool
         self.inputs, self.params = inputs or [], params or {}
         self.signals = _Signals()
@@ -139,8 +144,8 @@ _alive = set()
 
 
 def run_task(fn, tool, inputs=None, params=None, on_done=None, on_error=None, on_cancelled=None,
-             on_progress=None, on_log=None, on_finished=None, pool=None):
-    """Start ``fn(ctx)`` in the thread pool. Returns the :class:`Task` (call ``.cancel()`` to cancel)."""
+             on_progress=None, on_log=None, on_finished=None):
+    """Start ``fn(ctx)`` in a worker thread. Returns the :class:`Task` (call ``.cancel()`` to cancel)."""
     task = Task(fn, tool, inputs, params)
     cbs = {"done": on_done, "error": on_error, "cancelled": on_cancelled, "progress": on_progress,
            "log": on_log, "finished": on_finished}
@@ -150,5 +155,5 @@ def run_task(fn, tool, inputs=None, params=None, on_done=None, on_error=None, on
 
     bridge = _Bridge(task.signals, cbs, release)
     _alive.add((task, bridge))
-    (pool or QThreadPool.globalInstance()).start(task)
+    threading.Thread(target=task.run, name="gisbox-task-" + tool, daemon=True).start()
     return task

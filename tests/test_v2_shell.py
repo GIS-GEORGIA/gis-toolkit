@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("PySide6")
 # Qt must be imported BEFORE geopandas/shapely: the other order crashes on Windows (DLL clash) -
 # the real app also loads Qt first.
-from PySide6.QtCore import QCoreApplication, QThreadPool
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 gpd = pytest.importorskip("geopandas")

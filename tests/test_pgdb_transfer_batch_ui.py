@@ -1,8 +1,12 @@
+import sys
 import time, pytest
 tk = pytest.importorskip("tkinter")
 import pgdb_fixtures as fx
 from pgdb_fixtures import d
 from tools import pgdb_transfer_core as c
+
+pytestmark = pytest.mark.skipif(sys.platform != "win32" or not c.driver_available(),
+                                reason="needs Windows + Microsoft Access ODBC driver")
 
 
 def test_batch(tmp_path, monkeypatch):
