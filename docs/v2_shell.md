@@ -33,7 +33,8 @@ GIS logic stays in `tools/*_core.py`; pages only call it through `shell.run(...)
 | CRS Manager | **native PySide6 page** (detect, assign with confirmation, reproject to a NEW file, report) |
 | Updates | **native PySide6 page** (see [update_manager.md](update_manager.md)) |
 | Line buffers | **native PySide6 page** - same rules as the classic tool (EPSG:32637/32638 only, conversion only with consent, new numbered shapefiles, source never changed); logic in `tools/line_buffer_core.py` (`scan_line_shapefiles`, `plan_layer`, `build_buffers`), tested with exact area checks |
-| all other 11 tools | open in the classic window from the V2 sidebar; being ported one by one |
+| Map services | **native PySide6 page** (URL cards from `map_services.txt`, copy button, filter); parser in `tools/map_services_core.py`, checked to match the classic parser |
+| all other 10 tools | open in the classic window from the V2 sidebar; being ported one by one |
 
 To port a tool: add a page class in `v2/pages/`, set `kind="native"` and `page="module:Class"` in `registry.py`.
 

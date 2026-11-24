@@ -68,7 +68,8 @@ TOOLS = [
     _t("parcel_search", "search", "ნაკვეთის ძებნა", "Parcel search",
        "ნაკვეთის ძებნა კოდით / ნომრით.", "Find parcels by code/number.", key="Parcel search"),
     _t("map_services", "search", "რუკის სერვისები", "Map services",
-       "რუკის სერვისების სია და გახსნა.", "Map services list and launcher.", key="Map services"),
+       "რუკის სერვისების სია და გახსნა.", "Map services list and launcher.", key="Map services",
+       kind="native", page="v2.pages.map_services_page:MapServicesPage"),
 ]
 
 BY_ID = {t.id: t for t in TOOLS}

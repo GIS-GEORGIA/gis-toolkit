@@ -123,6 +123,13 @@ S = {
         "en": "The layer is in {cur}. Buffers are built only in EPSG:32637 / EPSG:32638.\n\nConvert it to EPSG:{epsg} (UTM zone {zone}, by the layer's location) and build the buffers there? The source file is not changed."},
     "lb_done": {"ka": "დასრულდა — {n} ბუფერი ჩაიწერა: {out}", "en": "Done - {n} buffer(s) written to {out}"},
     "lb_dep": {"ka": "ამ ხელსაწყოს სჭირდება geopandas + pyogrio.\n{e}", "en": "This tool needs geopandas + pyogrio.\n{e}"},
+    "ms_note": {"ka": "tile / WMS სერვისების URL-ები (Google basemaps, ორთოფოტო) — ArcMap / QGIS-ში გადასაკოპირებლად. ზოგი სერვისი მოითხოვს VPN-ს / წვდომას. ახლის დასამატებლად შეასწორე map_services.txt.",
+                "en": "tile / WMS service URLs (Google basemaps, ortho) to copy into ArcMap / QGIS. Some services may require VPN / access. Edit map_services.txt to add your own."},
+    "ms_filter": {"ka": "სერვისის ძებნა…", "en": "Filter services…"},
+    "ms_copy": {"ka": "კოპირება", "en": "Copy"},
+    "ms_tip": {"ka": "URL-ის კოპირება — ჩასვი ArcMap / QGIS-ში ახალ tile / WMS შრედ.", "en": "Copy this URL - paste it into ArcMap / QGIS as a new tile / WMS layer."},
+    "ms_copied": {"ka": "დაკოპირდა", "en": "Copied"},
+    "ms_empty": {"ka": "map_services.txt ვერ მოიძებნა ან ცარიელია.", "en": "map_services.txt not found or empty."},
     "upd_mb": {"ka": "{n:.1f} მბ", "en": "{n:.1f} MB"},
 }
 
