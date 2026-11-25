@@ -53,8 +53,16 @@ class ParcelSearchPage(QWidget):
         self.an_root.setText(st.get("an_root", ""))
         self.an_top.setValue(int(st.get("an_top", 5) or 5))
         shell.busy_changed.connect(self._set_busy)
-        if self._gdb() and os.path.exists(self._gdb()):
-            self.read_layers(silent=True)                  # like the classic tool: real layer / field lists
+        self._auto_read_done = False
+
+    def showEvent(self, event):                            # noqa: N802 (Qt API)
+        """Like the classic tool: on the first display, read the real layer / field lists of the database
+        (only when nothing else is running)."""
+        super().showEvent(event)
+        if not self._auto_read_done and getattr(self.shell, "task", None) is None:
+            self._auto_read_done = True
+            if self._gdb() and os.path.exists(self._gdb()):
+                self.read_layers(silent=True)
 
     # ------------------------------------------------------------------ texts / state
     def _p(self, key, **f):
