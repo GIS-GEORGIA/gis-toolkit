@@ -26,6 +26,7 @@ from tools.platform_utils import UI_FONT, MONO_FONT
 from tools.tooltip import add_tip
 # სუფთა ლოგიკა ცალკე მოდულში (ტესტირებადი, tkinter-ის გარეშე)
 from tools.translit import GEO2LAT, GEO_RANGE, transliterate, _sibling, feature_count
+from tools import translit as translit_core
 
 
 # ---- თარგმანები ------------------------------------------------------------
@@ -68,6 +69,8 @@ RTR = {
                     "ka": "დუბლი სახელი — გამოტოვდა"},
     "st_exists": {"en": "target exists — skipped",
                   "ka": "სამიზნე არსებობს — გამოტოვდა"},
+    "st_group":  {"en": "another file of this dataset is skipped — skipped too",
+                  "ka": "ამ მონაცემის სხვა ფაილი გამოტოვდა — ესეც გამოტოვდა"},
     "done":      {"en": "Done — renamed {ok}, skipped {sk}.",
                   "ka": "დასრულდა — გადაერქვა {ok}, გამოტოვდა {sk}."},
     "nothing":   {"en": "Nothing to rename — run Preview first.",
@@ -221,39 +224,11 @@ class RenameTransliterateTool(ToolFrame):
 
     # ---- გეგმის აგება ----
     def _iter_files(self, folder):
-        if self.recursive_var.get():
-            for root, _dirs, files in os.walk(folder):
-                for f in files:
-                    yield root, f
-        else:
-            for f in os.listdir(folder):
-                if os.path.isfile(os.path.join(folder, f)):
-                    yield folder, f
+        return translit_core.iter_files(folder, self.recursive_var.get())
 
     def _build_plan(self, folder):
-        """დააბრუნებს (plan, conflicts). plan: dict-ების სია
-        {dir, old, new, status}. status: ok / conflict / exists."""
-        items = []
-        target_count = {}
-        for d, name in self._iter_files(folder):
-            if not GEO_RANGE.search(name):
-                continue                       # ქართული ასო არ არის — გამოტოვება
-            new = transliterate(name)
-            if new == name:
-                continue                       # უცვლელი
-            items.append({"dir": d, "old": name, "new": new, "status": "ok"})
-            key = (os.path.normcase(d), os.path.normcase(new))
-            target_count[key] = target_count.get(key, 0) + 1
-
-        for it in items:
-            key = (os.path.normcase(it["dir"]), os.path.normcase(it["new"]))
-            dst = os.path.join(it["dir"], it["new"])
-            if target_count[key] > 1:
-                it["status"] = "conflict"
-            elif os.path.exists(dst) and \
-                    os.path.normcase(dst) != os.path.normcase(os.path.join(it["dir"], it["old"])):
-                it["status"] = "exists"
-        return items
+        """გეგმა — ლოგიკა tools.translit.build_plan-შია (საერთო V2-თან)."""
+        return translit_core.build_plan(folder, self.recursive_var.get())
 
     def _preview(self):
         folder = self.folder_var.get().strip()
@@ -278,8 +253,7 @@ class RenameTransliterateTool(ToolFrame):
             if it["status"] == "ok":
                 self.preview.insert("end", f"{it['old']}   →   {it['new']}\n")
             else:
-                note = self.tr("st_conflict") if it["status"] == "conflict" \
-                    else self.tr("st_exists")
+                note = self.tr("st_" + it["status"])
                 self.preview.insert("end",
                                     f"⚠ {it['old']}   →   {it['new']}   [{note}]\n")
         self.preview.configure(state="disabled")
@@ -301,20 +275,8 @@ class RenameTransliterateTool(ToolFrame):
                                    self.tr("confirm_m", n=len(doable))):
             return
 
-        ok = 0
-        skipped = len(self._plan) - len(doable)
-        self._undo = []          # ახალი პარტია — წინა undo იშლება
-        for it in doable:
-            src = os.path.join(it["dir"], it["old"])
-            dst = os.path.join(it["dir"], it["new"])
-            try:
-                os.rename(src, dst)
-                self._undo.append((dst, src))     # დასაბრუნებლად: ახალი → ძველი
-                self.app.log(f"✓ {it['old']} → {it['new']}")
-                ok += 1
-            except OSError as e:
-                self.app.log(f"✗ {it['old']}: {e}")
-                skipped += 1
+        # ახალი პარტია — წინა undo იშლება; ჯგუფის ერთი ფაილის შეცდომისას მთელი ჯგუფი უკან ბრუნდება
+        ok, skipped, self._undo = translit_core.apply_plan(self._plan, log=self.app.log)
 
         self.app.log("— " + self.tr("done", ok=ok, sk=skipped))
         messagebox.showinfo("GIS_BOX", self.tr("done", ok=ok, sk=skipped))
@@ -330,20 +292,8 @@ class RenameTransliterateTool(ToolFrame):
         if not messagebox.askyesno("GIS_BOX",
                                    self.tr("undo_confirm", n=len(self._undo))):
             return
-        ok = skipped = 0
-        for new_path, old_path in reversed(self._undo):
-            # უსაფრთხოება: ახალი უნდა არსებობდეს, ძველი — არა (რომ არ გადავაწეროთ)
-            if not os.path.exists(new_path) or os.path.exists(old_path):
-                self.app.log(f"↷ {os.path.basename(new_path)}")
-                skipped += 1
-                continue
-            try:
-                os.rename(new_path, old_path)
-                self.app.log(f"↩ {os.path.basename(new_path)} → {os.path.basename(old_path)}")
-                ok += 1
-            except OSError as e:
-                self.app.log(f"✗ {os.path.basename(new_path)}: {e}")
-                skipped += 1
+        # უსაფრთხოება: ახალი უნდა არსებობდეს, ძველი — არა (რომ არ გადავაწეროთ)
+        ok, skipped = translit_core.undo_renames(self._undo, log=self.app.log)
         self._undo = []
         self.app.log("— " + self.tr("undo_done", ok=ok, sk=skipped))
         messagebox.showinfo("GIS_BOX", self.tr("undo_done", ok=ok, sk=skipped))

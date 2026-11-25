@@ -131,6 +131,48 @@ S = {
     "ms_copied": {"ka": "დაკოპირდა", "en": "Copied"},
     "ms_empty": {"ka": "map_services.txt ვერ მოიძებნა ან ცარიელია.", "en": "map_services.txt not found or empty."},
     "upd_mb": {"ka": "{n:.1f} მბ", "en": "{n:.1f} MB"},
+    # ---- Rename → Latin
+    "rn_note": {"ka": "მიუთითე საქაღალდე. ყველა ფაილს, რომლის სახელშიც ქართული ასოებია, გადაერქმევა ლათინურად "
+                      "(„არსებული საყრდენი.shp“ → „arsebuli_sayrdeni.shp“); სფეისი და სხვა სიმბოლო ხდება „_“, "
+                      "გაფართოება უცვლელია. shapefile-ის ყველა თანმხლები ფაილი ერთად მუშავდება.",
+                "en": "Pick a folder. Every file whose name has Georgian letters is renamed to Latin "
+                      "(spaces and other symbols become “_”, the extension is kept). All sidecar files of a "
+                      "shapefile are handled together."},
+    "rn_folder": {"ka": "საქაღალდე:", "en": "Folder:"},
+    "rn_recursive": {"ka": "ქვესაქაღალდეებიც", "en": "Include subfolders"},
+    "rn_preview": {"ka": "წინასწარი სია", "en": "Preview"},
+    "rn_rename": {"ka": "გადარქმევა", "en": "Rename"},
+    "rn_undo": {"ka": "↩ დაბრუნება", "en": "↩ Undo"},
+    "rn_check": {"ka": "შემოწმება: მასალა დევს თუ ცარიელია", "en": "Check contents (empty or not)"},
+    "rn_check_tip": {"ka": "საქაღალდის ყველა .shp-ისთვის ლოგში წერს ობიექტების რაოდენობას და ცარიელია თუ არა. "
+                           "არაფერს ცვლის.",
+                     "en": "Logs the feature count of every .shp in the folder and whether it is empty. Changes nothing."},
+    "rn_col_old": {"ka": "ძველი სახელი", "en": "Old name"},
+    "rn_col_new": {"ka": "ახალი სახელი", "en": "New name"},
+    "rn_col_status": {"ka": "სტატუსი", "en": "Status"},
+    "rn_st_ok": {"ka": "გადაერქმევა", "en": "will be renamed"},
+    "rn_st_conflict": {"ka": "⚠ დუბლი სახელი — გამოტოვდება", "en": "⚠ duplicate name - skipped"},
+    "rn_st_exists": {"ka": "⚠ სამიზნე არსებობს — გამოტოვდება", "en": "⚠ target exists - skipped"},
+    "rn_st_group": {"ka": "⚠ ამ მონაცემის სხვა ფაილი გამოტოვდება — ესეც", "en": "⚠ another file of this dataset is skipped - so is this"},
+    "rn_warn_folder": {"ka": "მიუთითე არსებული საქაღალდე.", "en": "Specify a valid folder."},
+    "rn_none": {"ka": "ქართული სახელის მქონე ფაილი ვერ მოიძებნა.", "en": "No files with Georgian names found."},
+    "rn_scan_n": {"ka": "საგადარქმევოა {n} ფაილი ({c} გამოტოვდება).", "en": "{n} file(s) to rename ({c} will be skipped)."},
+    "rn_confirm": {"ka": "გადავარქვათ {n} ფაილს?\n„↩ დაბრუნება“ ღილაკით ბოლო გადარქმევის გაუქმება შეიძლება, "
+                         "სანამ ხელსაწყო ღიაა.",
+                   "en": "Rename {n} file(s)?\nThe last rename can be reverted with “↩ Undo” while this tool is open."},
+    "rn_nothing": {"ka": "გადასარქმევი არაფერია.", "en": "Nothing to rename."},
+    "rn_done": {"ka": "დასრულდა — გადაერქვა {ok}, გამოტოვდა {sk}.", "en": "Done - renamed {ok}, skipped {sk}."},
+    "rn_undo_none": {"ka": "დასაბრუნებელი არაფერია.", "en": "Nothing to undo."},
+    "rn_undo_q": {"ka": "დავაბრუნო ბოლო გადარქმევა ({n} ფაილი)?", "en": "Undo the last rename ({n} file(s))?"},
+    "rn_undo_done": {"ka": "დაბრუნდა — აღდგა {ok}, გამოტოვდა {sk}.", "en": "Undone - restored {ok}, skipped {sk}."},
+    "rn_chk_none": {"ka": "საქაღალდეში .shp ფაილი ვერ მოიძებნა.", "en": "No .shp files found in the folder."},
+    "rn_chk_hdr": {"ka": "— მასალის შემოწმება —", "en": "— Content check —"},
+    "rn_chk_has": {"ka": "✓ {name} — {n} ობიექტი", "en": "✓ {name} - {n} feature(s)"},
+    "rn_chk_has_x": {"ka": "✓ {name} — მასალა დევს", "en": "✓ {name} - has data"},
+    "rn_chk_empty": {"ka": "⚠ {name} — ცარიელია (0 ობიექტი)", "en": "⚠ {name} - EMPTY (0 features)"},
+    "rn_chk_unknown": {"ka": "? {name} — ვერ წავიკითხე", "en": "? {name} - could not read"},
+    "rn_chk_sum": {"ka": "— შემოწმდა {t}: {d} მასალით, {e} ცარიელი, {u} წაუკითხავი —",
+                   "en": "— Checked {t}: {d} with data, {e} empty, {u} unreadable —"},
 }
 
 

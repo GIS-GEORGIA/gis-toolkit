@@ -98,3 +98,132 @@ def feature_count(shp_path):
     except OSError:
         pass
     return None
+
+
+# ---- ფაილების გადარქმევა (GUI-ს გარეშე; იყენებს კლასიკური და V2 ხელსაწყო) ----
+def iter_files(folder, recursive=False):
+    """(საქაღალდე, ფაილის სახელი) — მხოლოდ ფაილები; recursive=True — ქვესაქაღალდეებიც."""
+    if recursive:
+        for root, _dirs, files in os.walk(folder):
+            for f in files:
+                yield root, f
+    else:
+        for f in os.listdir(folder):
+            if os.path.isfile(os.path.join(folder, f)):
+                yield folder, f
+
+
+def dataset_key(folder, name):
+    """ერთი მონაცემის ფაილების ჯგუფი: იგივე საქაღალდე + სახელი პირველ წერტილამდე
+    (a.shp, a.dbf, a.shx, a.shp.xml … → ერთი ჯგუფი)."""
+    return os.path.normcase(folder), name.split(".", 1)[0].lower()
+
+
+def build_plan(folder, recursive=False):
+    """გადარქმევის გეგმა: dict-ების სია {dir, old, new, status}.
+
+    status: ok / conflict (ორი ფაილი ერთსა და იმავე სახელს იძლევა) / exists (სამიზნე
+    უკვე არსებობს) / group (იმავე მონაცემის სხვა ფაილი ვერ გადაერქმევა — მთელი ჯგუფი
+    გამოტოვდება, რომ shapefile არ დაიშალოს)."""
+    items = []
+    target_count = {}
+    for d, name in iter_files(folder, recursive):
+        if not GEO_RANGE.search(name):
+            continue
+        new = transliterate(name)
+        if new == name:
+            continue
+        items.append({"dir": d, "old": name, "new": new, "status": "ok"})
+        key = (os.path.normcase(d), os.path.normcase(new))
+        target_count[key] = target_count.get(key, 0) + 1
+    for it in items:
+        key = (os.path.normcase(it["dir"]), os.path.normcase(it["new"]))
+        dst = os.path.join(it["dir"], it["new"])
+        if target_count[key] > 1:
+            it["status"] = "conflict"
+        elif os.path.exists(dst) and \
+                os.path.normcase(dst) != os.path.normcase(os.path.join(it["dir"], it["old"])):
+            it["status"] = "exists"
+    bad = {dataset_key(it["dir"], it["old"]) for it in items if it["status"] != "ok"}
+    for it in items:
+        if it["status"] == "ok" and dataset_key(it["dir"], it["old"]) in bad:
+            it["status"] = "group"
+    items.sort(key=lambda it: (it["dir"].lower(), it["old"].lower()))
+    return items
+
+
+def apply_plan(plan, log=None, cancel=None):
+    """გადარქმევა მონაცემის ჯგუფებად. თუ ჯგუფის ერთი ფაილი ვერ გადაერქვა (მაგ.
+    ArcGIS-ს აქვს გახსნილი), იმავე ჯგუფის უკვე გადარქმეული ფაილები უკან ბრუნდება.
+
+    აბრუნებს (ok, skipped, undo); undo = [(ახალი_გზა, ძველი_გზა), …]."""
+    log = log or (lambda m: None)
+    groups = {}
+    for it in plan:
+        groups.setdefault(dataset_key(it["dir"], it["old"]), []).append(it)
+    ok = skipped = 0
+    undo = []
+    for members in groups.values():
+        doable = [it for it in members if it["status"] == "ok"]
+        skipped += len(members) - len(doable)
+        if not doable:
+            continue
+        if cancel and cancel():
+            skipped += len(doable)
+            continue
+        done = []
+        failed = None
+        for it in doable:
+            src = os.path.join(it["dir"], it["old"])
+            dst = os.path.join(it["dir"], it["new"])
+            try:
+                if os.path.exists(dst):                      # ბოლო წამის დაცვა — არაფერს ვაწერთ ზემოდან
+                    raise FileExistsError(dst)
+                os.rename(src, dst)
+                done.append((dst, src, it))
+            except OSError as e:
+                failed = (it, e)
+                break
+        if failed:
+            for dst, src, _it in reversed(done):
+                try:
+                    os.rename(dst, src)
+                except OSError as e:
+                    log("✗ {} → {}: could not restore: {}".format(os.path.basename(dst), os.path.basename(src), e))
+                    undo.append((dst, src))
+            log("✗ {}: {} — {} file(s) of this dataset left unchanged".format(failed[0]["old"], failed[1], len(doable)))
+            skipped += len(doable)
+            continue
+        for dst, src, it in done:
+            undo.append((dst, src))
+            log("✓ {} → {}".format(it["old"], it["new"]))
+            ok += 1
+    return ok, skipped, undo
+
+
+def undo_renames(undo, log=None):
+    """ბოლო გადარქმევის დაბრუნება. ახალი უნდა არსებობდეს, ძველი — არა (ზემოდან არ ვწერთ).
+    აბრუნებს (ok, skipped)."""
+    log = log or (lambda m: None)
+    ok = skipped = 0
+    for new_path, old_path in reversed(undo):
+        if not os.path.exists(new_path) or os.path.exists(old_path):
+            log("↷ {}".format(os.path.basename(new_path)))
+            skipped += 1
+            continue
+        try:
+            os.rename(new_path, old_path)
+            log("↩ {} → {}".format(os.path.basename(new_path), os.path.basename(old_path)))
+            ok += 1
+        except OSError as e:
+            log("✗ {}: {}".format(os.path.basename(new_path), e))
+            skipped += 1
+    return ok, skipped
+
+
+def check_contents(folder, recursive=False):
+    """საქაღალდის ყველა .shp: [(გზა, რაოდენობა)], რაოდენობა — feature_count-ის შედეგი
+    (0 = ცარიელი, -1 = მასალა დევს, None = ვერ წავიკითხეთ)."""
+    shps = sorted((os.path.join(d, n) for d, n in iter_files(folder, recursive) if n.lower().endswith(".shp")),
+                  key=lambda p: os.path.basename(p).lower())
+    return [(p, feature_count(p)) for p in shps]

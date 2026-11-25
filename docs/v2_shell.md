@@ -34,6 +34,7 @@ GIS logic stays in `tools/*_core.py`; pages only call it through `shell.run(...)
 | Updates | **native PySide6 page** (see [update_manager.md](update_manager.md)) |
 | Line buffers | **native PySide6 page** - same rules as the classic tool (EPSG:32637/32638 only, conversion only with consent, new numbered shapefiles, source never changed); logic in `tools/line_buffer_core.py` (`scan_line_shapefiles`, `plan_layer`, `build_buffers`), tested with exact area checks |
 | Map services | **native PySide6 page** (URL cards from `map_services.txt`, copy button, filter); parser in `tools/map_services_core.py`, checked to match the classic parser |
+| Rename → Latin | **native PySide6 page** (preview table old / new / status, rename after confirmation in a background task, undo of the last batch, content check); logic in `tools/translit.py` shared with the classic tool. All files of one dataset (`a.shp`, `a.dbf`, `a.shp.xml` …) are renamed together or not at all: a conflict on one file skips the whole set, and a failed rename (e.g. a file held open by ArcGIS) rolls back the files of that set already renamed |
 | all other 10 tools | open in the classic window from the V2 sidebar; being ported one by one |
 
 To port a tool: add a page class in `v2/pages/`, set `kind="native"` and `page="module:Class"` in `registry.py`.
