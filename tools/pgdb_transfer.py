@@ -19,6 +19,7 @@ from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT, MONO_FONT, open_path
 from tools.tooltip import add_tip
 from tools import pgdb_transfer_core as core
+from tools import pgdb_gdb_bridge as gdbx
 
 DEFAULT_YEAR = 2026
 
@@ -138,6 +139,27 @@ DTR = {
                    "ka": "წყაროში არსებული წლები აქ თოლიებად გამოჩნდება „ბაზების შემოწმების“ შემდეგ."},
     "years_pick": {"en": "Years to transfer (tick):", "ka": "გადასატანი წლები (მონიშნე):"},
     "years_all": {"en": "All years", "ka": "ყველა წელი"},
+    "pick_file": {"en": "File (.mdb)…", "ka": "ფაილი (.mdb)…"},
+    "pick_folder": {"en": "Folder (.gdb)…", "ka": "საქაღალდე (.gdb)…"},
+    "gdb_note": {"en": "File Geodatabase (.gdb) is supported as source and as destination. A .gdb source is only read. "
+                       "A .gdb destination is NEVER modified: a full new copy <name>_FINAL_<date time>.gdb is made and "
+                       "only the new records are added to it (same duplicate rules).",
+                 "ka": "File Geodatabase (.gdb) მხარდაჭერილია წყაროდაც და მიმღებადაც. .gdb წყარო მხოლოდ იკითხება. "
+                       ".gdb მიმღები არასდროს იცვლება: კეთდება სრული ახალი ასლი <სახელი>_FINAL_<თარიღი დრო>.gdb და "
+                       "მხოლოდ ახალი ჩანაწერები ემატება მას (დუბლიკატების იგივე წესებით)."},
+    "st_gdb": {"en": "Reading .gdb…", "ka": ".gdb იკითხება…"},
+    "code_gdb_no_crs": {"en": "A .gdb layer has no coordinate system ({d}). It is never guessed - define it first (CRS Manager).",
+                        "ka": ".gdb ფენას კოორდინატთა სისტემა არ აქვს ({d}). არასდროს ვიგულისხმებთ — ჯერ განსაზღვრე (CRS მენეჯერი)."},
+    "code_gdb_ambiguous": {"en": "More than one .gdb layer of the same geometry type: {d}. Keep one per type "
+                                 "(point / line / polygon).",
+                           "ka": ".gdb-ში ერთი ტიპის რამდენიმე ფენაა: {d}. დატოვე თითო ტიპზე ერთი (წერტილი / ხაზი / პოლიგონი)."},
+    "code_gdb_no_layers": {"en": "No point / line / polygon layers found in the .gdb.",
+                           "ka": ".gdb-ში წერტილის / ხაზის / პოლიგონის ფენა ვერ მოიძებნა."},
+    "code_gdb_open": {"en": "Could not open the .gdb: {d}", "ka": ".gdb-ის გახსნა ვერ მოხერხდა: {d}"},
+    "code_gdb_write": {"en": "Writing to the new .gdb failed (it was removed; the destination is untouched): {d}",
+                       "ka": "ახალ .gdb-ში ჩაწერა ვერ მოხერხდა (ის წაიშალა; მიმღები უცვლელია): {d}"},
+    "code_no_pyogrio": {"en": "pyogrio (GDAL) is not installed - .gdb is unavailable: {d}",
+                        "ka": "pyogrio (GDAL) დაყენებული არ არის — .gdb მიუწვდომელია: {d}"},
     "btn_merge": {"en": "Merge all years into ONE database…", "ka": "ყველა წლის ერთ ბაზაში გაერთიანება…"},
     "tip_merge": {"en": "Choose the per-year databases (e.g. the *_transferred_<year>_*.mdb files) - all their records are "
                         "combined into ONE brand-new database (points, lines, polygons). Records with the same werilis_no "
@@ -311,7 +333,10 @@ DTR = {
 
 def fmt_size(path):
     try:
-        n = os.path.getsize(path)
+        if os.path.isdir(path):                       # .gdb — საქაღალდე
+            n = sum(os.path.getsize(os.path.join(r, f)) for r, _d, fs in os.walk(path) for f in fs)
+        else:
+            n = os.path.getsize(path)
     except OSError:
         return "?"
     return "{:.0f} MB".format(n / 1048576.0) if n >= 1048576 else "{:.0f} KB".format(n / 1024.0)
@@ -350,9 +375,14 @@ class PgdbTransferTool(ToolFrame):
         self._copyall_path = None
         self._batch_auto = False
         self._batch_backed_up = False
+        self._staged, self._orig = {}, {}          # .gdb ↔ დროებითი .mdb (ძრავა .mdb-ზე მუშაობს)
+        self._gdb_dst = self._gdb_final = None     # მიმღები .gdb და მისი ახალი FINAL ასლი
+        self._final_path = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
+                  justify="left").pack(anchor="w", pady=(0, 4))
+        ttk.Label(self, text=self.tr("gdb_note"), foreground=pal["muted"], wraplength=780,
                   justify="left").pack(anchor="w", pady=(0, 8))
 
         self.src_var = tk.StringVar(value=st.get("src") or saved.get("src") or "")
@@ -480,10 +510,27 @@ class PgdbTransferTool(ToolFrame):
         st["final"], st["onego"] = self.final_var.get(), self.onego_var.get()
 
     def _pick(self, var):
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label=self.tr("pick_file"), command=lambda: self._pick_file(var))
+        menu.add_command(label=self.tr("pick_folder"), command=lambda: self._pick_folder(var))
+        try:
+            menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def _pick_file(self, var):
         cur = var.get().strip()
         p = filedialog.askopenfilename(
             title=self.tr("pick_title"), initialdir=os.path.dirname(cur) if cur else None,
             filetypes=[("Personal Geodatabase / Access", "*.mdb"), ("All files", "*.*")])
+        if p:
+            var.set(os.path.normpath(p))
+            self._infos = None
+
+    def _pick_folder(self, var):
+        cur = var.get().strip()
+        p = filedialog.askdirectory(title=self.tr("pick_title"), initialdir=os.path.dirname(cur) if cur else None,
+                                    mustexist=True)
         if p:
             var.set(os.path.normpath(p))
             self._infos = None
@@ -553,10 +600,10 @@ class PgdbTransferTool(ToolFrame):
             messagebox.showwarning("GIS_BOX", self.tr("e_pick_dst"))
             return None
         for p in (src, dst):
-            if not p.lower().endswith(".mdb"):
+            if not (p.lower().endswith(".mdb") or gdbx.is_gdb(p)):
                 messagebox.showwarning("GIS_BOX", self.tr("e_not_mdb", p=p))
                 return None
-            if not os.path.isfile(p):
+            if not (os.path.isdir(p) if gdbx.is_gdb(p) else os.path.isfile(p)):
                 messagebox.showwarning("GIS_BOX", self.tr("e_missing", p=p))
                 return None
         if core.same_file(src, dst):
@@ -589,6 +636,8 @@ class PgdbTransferTool(ToolFrame):
         src, dst, _y = v
         self._set_text(self.errlog, "")
         self._set_text(self.summary, "")
+        self._staged, self._orig = {}, {}
+        self.cancel_event.clear()
         self._set_busy(True)
         self.status.set(self.tr("btn_check") + "…")
         threading.Thread(target=self._check_worker, args=(src, dst), daemon=True).start()
@@ -598,6 +647,7 @@ class PgdbTransferTool(ToolFrame):
             if not core.driver_available():
                 import pyodbc  # noqa: F401  (ImportError → no_pyodbc)
                 raise core.TransferError("no_driver", core.ODBC_DRIVER)
+            src, dst = self._stage(src, "src"), self._stage(dst, "dst")
             si, di = core.inspect_db(src), core.inspect_db(dst)
             mapping, amb = core.match_layers(si, di)
             locked = None
@@ -618,6 +668,28 @@ class PgdbTransferTool(ToolFrame):
             self.msg_queue.put(("error", e))
         except Exception as e:                       # noqa: BLE001
             self.msg_queue.put(("error", core.friendly_error(e)))
+
+    def _stage(self, path, tag):
+        """.gdb → დროებითი .mdb (ძრავისთვის); .mdb უცვლელად. ორიგინალი .gdb არასდროს იცვლება."""
+        if not gdbx.is_gdb(path):
+            return path
+        if not hasattr(self, "_stage_dir"):
+            import atexit
+            import shutil
+            import tempfile
+            self._stage_dir = tempfile.mkdtemp(prefix="gisbox_gdb_")
+            atexit.register(shutil.rmtree, self._stage_dir, True)
+        out = gdbx.staged_path(path, self._stage_dir, "." + tag)
+        if os.path.exists(out):
+            try:
+                os.remove(out)
+            except OSError:
+                pass
+        self.msg_queue.put(("status", self.tr("st_gdb")))
+        gdbx.gdb_to_mdb(path, out, progress=lambda k, i, n: self.msg_queue.put(("progress", (k, i, n))),
+                        cancel=self.cancel_event.is_set)
+        self._staged[path], self._orig[out] = out, path
+        return out
 
     def _on_checked(self, payload):
         si, di, mapping, amb, locked, years = payload
@@ -729,6 +801,11 @@ class PgdbTransferTool(ToolFrame):
         if missing:
             messagebox.showwarning("GIS_BOX", self.tr("e_map", k=", ".join(KIND_LABEL[k][self.app.lang] for k in missing)))
             return
+        src_o, dst_o = src, dst                        # მომხმარებლის არჩეული (შეიძლება .gdb)
+        src, dst = self._staged.get(src_o, src_o), self._staged.get(dst_o, dst_o)    # ძრავისთვის (.mdb)
+        dst_gdb = gdbx.is_gdb(dst_o)
+        self._final_path = None
+        self._gdb_dst = self._gdb_final = None
         if year == "all":
             try:
                 year = core.source_years(src, mapping)
@@ -738,26 +815,28 @@ class PgdbTransferTool(ToolFrame):
             if not year:
                 messagebox.showwarning("GIS_BOX", self.tr("e_no_years"))
                 return
-        final = bool(self.final_var.get())
+        final = bool(self.final_var.get()) or dst_gdb  # .gdb მიმღები ადგილზე არასდროს იცვლება → ყოველთვის ახალი ასლი
         auto = bool(self.onego_var.get()) and len(year) > 1
         self._batch_auto, self._batch_backed_up = False, False
         if final or auto:                              # ერთი საერთო დადასტურება
-            fpath = core.final_output_path(dst) if final else None
+            fpath = (gdbx.final_gdb_path(dst_o) if dst_gdb else core.final_output_path(dst_o)) if final else None
             extra = ""
             if self.copyall_var.get():
-                extra += self.tr("conf_copyall", p=core.all_years_output_path(dst)).strip("\n") + "\n"
+                extra += self.tr("conf_copyall", p=core.all_years_output_path(dst_o)).strip("\n") + "\n"
             if not final and self.backup_var.get():
                 extra += self.tr("conf_backup").strip("\n") + "\n"
-            sw = core.size_warning(dst)
+            sw = core.size_warning(dst_o)
             if sw:
                 extra += self.tr("size_warn", mb=sw[0], pct=sw[1])
             mode = self.tr("mode_final", p=fpath) if final else self.tr("mode_direct")
             if not messagebox.askyesno(self.tr("conf_title"), self.tr(
-                    "conf_batch", y=", ".join(str(y) for y in year), s=os.path.basename(src),
-                    d=os.path.basename(dst), mode=mode, extra=extra)):
+                    "conf_batch", y=", ".join(str(y) for y in year), s=os.path.basename(src_o),
+                    d=os.path.basename(dst_o), mode=mode, extra=extra)):
                 return
             self._batch_auto = auto
-            if final:
+            if dst_gdb:
+                self._gdb_dst, self._gdb_final = dst_o, fpath
+            elif final:
                 self._set_busy(True)
                 self.status.set(self.tr("st_copy"))
                 self._year_queue = list(year[1:])
@@ -785,6 +864,9 @@ class PgdbTransferTool(ToolFrame):
         self._batch_ctx = (src, fpath, mapping)
         self._launch_analysis(src, fpath, first_year, mapping)
 
+    def _final_shown(self):
+        return self._gdb_final or (self._final_path if self.final_var.get() else None)
+
     def _batch_next(self):
         """მომდევნო წელი რიგიდან (ავტომატურად); რიგი ცარიელია → ჯამური შეტყობინება."""
         if self._year_queue and getattr(self, "_batch_ctx", None):
@@ -796,8 +878,8 @@ class PgdbTransferTool(ToolFrame):
             lines = [self.tr("batch_head")] + [self.tr("batch_line", y=y, n=n) for y, n in self._batch_results]
             if getattr(self, "_batch_stopped", False):
                 lines.append(self.tr("batch_stopped"))
-            if self.final_var.get() and getattr(self, "_final_path", None):
-                lines.append(self.tr("sum_final", p=self._final_path))
+            if self._final_shown():
+                lines.append(self.tr("sum_final", p=self._final_shown()))
             messagebox.showinfo("GIS_BOX", "\n".join(lines))
         self._batch_results = []
         return False
@@ -820,7 +902,8 @@ class PgdbTransferTool(ToolFrame):
         self._set_text(self.errlog, "")
         self._reset_tree()
         self._wrote = False
-        self._log_path = core.default_log_path(dst, self.app_data_dir(), year=year, src_path=src)
+        self._log_path = core.default_log_path(self._orig.get(dst, dst), self.app_data_dir(), year=year,
+                                               src_path=self._orig.get(src, src))
         self._set_busy(True)
         self.progress.configure(value=0)
         self.status.set(self.tr("st_analysing"))
@@ -845,8 +928,11 @@ class PgdbTransferTool(ToolFrame):
             log.raw("=" * 78)
             log.raw("DATABASE DATA TRANSFER — year {}".format(year))
             log.raw("=" * 78)
-            log("source:      {}".format(src))
-            log("destination: {}".format(dst))
+            log("source:      {}{}".format(self._orig.get(src, src),
+                                           "  (read via staging database {})".format(src) if src in self._orig else ""))
+            log("destination: {}{}".format(self._orig.get(dst, dst),
+                                           "  (checked on staging copy {}; the .gdb itself is never modified -> new "
+                                           "copy {})".format(dst, self._gdb_final) if dst in self._orig else ""))
             log("period:      {0}-01-01 00:00:00 .. {0}-12-31 23:59:59".format(year))
             log("layer mapping: " + "; ".join("{}: {} -> {}".format(k.upper(), a, b) for k, (a, b) in mapping.items()))
             log("options: backup={} | undated-export={} | transferred-copy={} | all-years-db={}".format(
@@ -893,11 +979,12 @@ class PgdbTransferTool(ToolFrame):
         self._fill_tree(plan, written=False)
         todo = plan.totals()["to_insert"]
         n_undated = self._undated_count(plan)
-        self._undated_path = (core.undated_output_path(plan.src_path, os.path.dirname(os.path.abspath(plan.dst_path)))
+        o_src, o_dst = self._orig.get(plan.src_path, plan.src_path), self._orig.get(plan.dst_path, plan.dst_path)
+        self._undated_path = (core.undated_output_path(o_src, os.path.dirname(os.path.abspath(o_dst)))
                               if n_undated else None)
         for lp in plan.layers:
             self._report_layer_issues(lp, plan)
-        text = self.tr("conf_head", y=plan.year, s=os.path.basename(plan.src_path), d=os.path.basename(plan.dst_path))
+        text = self.tr("conf_head", y=plan.year, s=os.path.basename(o_src), d=os.path.basename(o_dst))
         for lp in plan.layers:
             k = KIND_LABEL[lp.kind][self.app.lang]
             if lp.blocked:
@@ -928,15 +1015,18 @@ class PgdbTransferTool(ToolFrame):
                 messagebox.showinfo(self.tr("conf_title"), text + "\n" + self.tr("conf_nothing"))
             self._batch_next()
             return
-        text += self.tr("conf_backup") if self.backup_var.get() else self.tr("conf_nobackup")
+        if self._gdb_final:
+            text += self.tr("mode_final", p=self._gdb_final)
+        else:
+            text += self.tr("conf_backup") if self.backup_var.get() else self.tr("conf_nobackup")
         if n_undated:
             text += "\n" + self.tr("conf_undated", n=n_undated, p=self._undated_path)
-        self._copyset_path = (core.transferred_output_path(plan.dst_path, plan.year,
-                                                           os.path.dirname(os.path.abspath(plan.dst_path)))
+        self._copyset_path = (core.transferred_output_path(o_dst, plan.year,
+                                                           os.path.dirname(os.path.abspath(o_dst)))
                               if self.copyset_var.get() else None)
         if self._copyset_path:
             text += "\n" + self.tr("conf_copyset", p=self._copyset_path)
-        self._copyall_path = (core.all_years_output_path(plan.dst_path) if self.copyall_var.get() else None)
+        self._copyall_path = (core.all_years_output_path(o_dst) if self.copyall_var.get() else None)
         if self._copyall_path:
             text += "\n" + self.tr("conf_copyall", p=self._copyall_path)
         text += "\n" + self.tr("conf_ask", n=todo)
@@ -954,7 +1044,7 @@ class PgdbTransferTool(ToolFrame):
         self.cancel_event.clear()
         self.status.set(self.tr("st_writing"))
         self.progress.configure(value=0)
-        backup = (bool(self.backup_var.get()) and not self.final_var.get()
+        backup = (bool(self.backup_var.get()) and not self.final_var.get() and not self._gdb_final
                   and not (self._batch_auto and self._batch_backed_up))
         self._batch_backed_up = self._batch_backed_up or backup
         threading.Thread(target=self._write_worker, args=(plan, backup, self._undated_path, False),
@@ -967,6 +1057,9 @@ class PgdbTransferTool(ToolFrame):
             if not skip_main:
                 log("--- writing ---")
                 core.execute(plan, log=log, backup=backup, progress=progress, cancel=self.cancel_event.is_set)
+                if self._gdb_final:
+                    log("--- transferred records -> new .gdb (copy of the destination) ---")
+                    gdbx.append_plan_to_gdb(plan, self._gdb_dst, self._gdb_final, log=log)
             plan.undated_plan, plan.undated_error = None, None
             plan.copyset_plan, plan.copyset_error = None, None
             plan.copyall_plan, plan.copyall_error = None, None
@@ -1132,8 +1225,8 @@ class PgdbTransferTool(ToolFrame):
         self.status.set(self.tr("st_done", n=n))
         self._infos = None                        # ბაზები შეიცვალა — შესაბამისობა/რიცხვები ხელახლა
         msg = self.tr("st_done", n=n)
-        if self.final_var.get() and getattr(self, "_final_path", None):
-            msg += "\n\n" + self.tr("sum_final", p=self._final_path)
+        if self._final_shown():
+            msg += "\n\n" + self.tr("sum_final", p=self._final_shown())
         up = getattr(plan, "undated_plan", None)
         if up:
             msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
@@ -1250,6 +1343,8 @@ class PgdbTransferTool(ToolFrame):
                     if getattr(self, "_pending_start", False):
                         self._pending_start = False
                         self._start()
+                elif kind == "status":
+                    self.status.set(payload)
                 elif kind == "final_ready":
                     self._on_final_ready(payload)
                 elif kind == "analysed":
