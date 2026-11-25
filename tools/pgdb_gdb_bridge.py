@@ -19,7 +19,8 @@ import shutil
 from tools import pgdb_transfer_core as core
 from tools.pgdb_transfer_core import KINDS, TransferError
 
-SKIP_COLS = {"objectid", "shape", "shape_length", "shape_area", "fid", "geometry"}
+SKIP_COLS = {"objectid", "shape", "shape_length", "shape_area", "fid", "geometry"}   # გენერირებადი სისტემური ველები
+STAGE_SKIP = {"objectid", "shape", "fid", "geometry"}      # დროებით .mdb-ში Shape_Length/Shape_Area გადადის (არ იკარგება)
 
 
 def is_gdb(path):
@@ -236,7 +237,7 @@ def gdb_to_mdb(gdb_path, out_mdb, layers=None, log=None, progress=None, cancel=N
                 row = gdf.iloc[i]
                 oid = _clean(row[oid_col]) if oid_col else i + 1
                 vals = {have[c.upper()]: _clean(row[c]) for c in cols
-                        if c.lower() not in SKIP_COLS and c.upper() in have}
+                        if c.lower() not in STAGE_SKIP and c.upper() in have}
                 no_col = core.find_field(list(vals), core.KEY_FIELD)
                 no_raw = vals.get(no_col) if no_col else None
                 try:
@@ -247,6 +248,9 @@ def gdb_to_mdb(gdb_path, out_mdb, layers=None, log=None, progress=None, cancel=N
                     lp.errors.append((oid, no_raw, "geometry: {}".format(e)))
                     log("  gdb OBJECTID {} no={} NOT staged ({})".format(oid, no_raw, e), "WARN")
                     continue
+                for meas, val in (("SHAPE_LENGTH", geoms[i].length), ("SHAPE_AREA", geoms[i].area)):
+                    if meas in have and vals.get(have[meas]) is None and (meas == "SHAPE_LENGTH" or kind == "polygon"):
+                        vals[have[meas]] = float(val)            # .gdb-ში ცარიელია → გეომეტრიიდან (ESRI-სავით, სიბრტყეზე)
                 shp = next((have[k] for k in have if k == "SHAPE"), "SHAPE")
                 vals[shp] = blob
                 # შაბლონის Required ველები: გეომეტრიიდან ვავსებთ, თუ .gdb-ში არ არის
@@ -289,10 +293,15 @@ def append_plan_to_gdb(plan, dst_gdb, final_gdb, log=None, layer_names=None):
     import pyproj
     if is_gdb_dir(final_gdb) and os.path.samefile(final_gdb, dst_gdb):
         raise TransferError("same_db")
+    from tools import gdb_fidelity as fid
     created = False
+    plan.domain_violations = getattr(plan, "domain_violations", {})
+    dst_audit = fid.audit(dst_gdb)
+    if dst_audit["domains"] or any(l["subtypes"] for l in dst_audit["layers"].values()):
+        log("destination schema: " + fid.describe(dst_audit))
     if not os.path.exists(final_gdb):
         try:
-            shutil.copytree(dst_gdb, final_gdb)
+            shutil.copytree(dst_gdb, final_gdb, ignore=shutil.ignore_patterns("*.lock"))   # სხვისი ჩაკეტვა არ გადმოვიტანოთ
         except OSError as e:
             shutil.rmtree(final_gdb, ignore_errors=True)
             raise TransferError("copy_failed", str(e))
@@ -323,9 +332,20 @@ def append_plan_to_gdb(plan, dst_gdb, final_gdb, log=None, layer_names=None):
                         row[existing[low]] = v
                     else:
                         dropped.add(col)
-                rows.append(row)
                 stype, parts = core.decode_shape(it["blob"])
-                geoms.append(parts_to_geometry(stype, parts))
+                geom = parts_to_geometry(stype, parts)
+                # Shape_Length/Shape_Area: ზუსტი მნიშვნელობა (წყაროს ველიდან, ან გეომეტრიიდან) — GDAL-ის ავტო-გამოთვლა
+                # სიზუსტეს ცოტას კარგავს (15.000016 vs 15.0); ცალსახად მითითებულ მნიშვნელობას კი უცვლელად ინახავს.
+                src_vals = {k.lower(): v for k, v in it["values"].items()}
+                for low, fname in existing.items():
+                    if low == "shape_length" and lp.kind != "point":
+                        v = src_vals.get("shape_length")
+                        row[fname] = float(v) if v is not None else float(geom.length)
+                    elif low == "shape_area" and lp.kind == "polygon":
+                        v = src_vals.get("shape_area")
+                        row[fname] = float(v) if v is not None else float(geom.area)
+                rows.append(row)
+                geoms.append(geom)
             # pyogrio დამატებისას ველებს ადგილმდებარეობით აწყვილებს → ყველა ველი ფენის თანმიმდევრობით, ფენის ტიპით
             # (რომელი ველი არ გვაქვს — ტიპიზებული ცარიელი მნიშვნელობა)
             n = len(rows)
@@ -340,6 +360,12 @@ def append_plan_to_gdb(plan, dst_gdb, final_gdb, log=None, layer_names=None):
                     data[fname] = pd.Series(col, dtype="float64")
                 else:
                     data[fname] = pd.Series(col, dtype=object)
+            viol = fid.domain_violations(dst_audit, name, [(it["src_oid"], r) for it, r in zip(items, rows)])
+            if viol:                                      # ვწერთ (არაფერს ვკარგავთ), მაგრამ ხმამაღლა ვაფრთხილებთ
+                plan.domain_violations.setdefault(lp.kind, []).extend(viol)
+                log("  ⚠ {} value(s) do not match the destination domain/subtype (written as they are, please review): {}".format(
+                    len(viol), "; ".join("src OBJECTID {} {}={} ({})".format(o, f, v, why) for o, f, v, why in viol[:15])
+                    + (" …" if len(viol) > 15 else "")), "WARN")
             gdf = gpd.GeoDataFrame(pd.DataFrame(data, index=range(n)), geometry=geoms, crs=pyproj.CRS.from_wkt(wkt))
             og.write_dataframe(gdf, final_gdb, layer=name, driver="OpenFileGDB", append=True,
                                promote_to_multi=(lp.kind != "point"))

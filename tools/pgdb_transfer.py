@@ -20,6 +20,7 @@ from tools.platform_utils import UI_FONT, MONO_FONT, open_path
 from tools.tooltip import add_tip
 from tools import pgdb_transfer_core as core
 from tools import pgdb_gdb_bridge as gdbx
+from tools import gdb_fidelity as fid
 
 DEFAULT_YEAR = 2026
 
@@ -160,6 +161,17 @@ DTR = {
                        "ka": "ახალ .gdb-ში ჩაწერა ვერ მოხერხდა (ის წაიშალა; მიმღები უცვლელია): {d}"},
     "code_no_pyogrio": {"en": "pyogrio (GDAL) is not installed - .gdb is unavailable: {d}",
                         "ka": "pyogrio (GDAL) დაყენებული არ არის — .gdb მიუწვდომელია: {d}"},
+    "st_fidelity": {"en": "Checking that nothing was lost (domains, subtypes, records)…",
+                    "ka": "მოწმდება, რომ არაფერი დაიკარგა (დომენები, ქვეტიპები, ჩანაწერები)…"},
+    "fid_ok": {"en": "Fidelity check: OK - schema (domains, subtypes, field properties, relationships) identical and all "
+                     "original records unchanged.",
+               "ka": "სიზუსტის შემოწმება: წესრიგშია — სქემა (დომენები, ქვეტიპები, ველების თვისებები, ურთიერთობები) "
+                     "იდენტურია და ყველა არსებული ჩანაწერი უცვლელია."},
+    "fid_bad": {"en": "Fidelity check: DIFFERENCES FOUND - details below and in the log. Do not delete the original.",
+                "ka": "სიზუსტის შემოწმება: ნაპოვნია განსხვავებები — დეტალები ქვემოთ და ლოგში. ორიგინალი არ წაშალო."},
+    "fid_viol": {"en": "Warning: {n} new value(s) do not match the destination domain/subtype (written as they are) - see the log.",
+                 "ka": "გაფრთხილება: {n} ახალი მნიშვნელობა მიმღების დომენს/ქვეტიპს არ ემთხვევა (ჩაიწერა როგორც არის) — იხილე ლოგი."},
+    "fid_err": {"en": "Fidelity check could not run: {e}", "ka": "სიზუსტის შემოწმება ვერ შესრულდა: {e}"},
     "btn_merge": {"en": "Merge all years into ONE database…", "ka": "ყველა წლის ერთ ბაზაში გაერთიანება…"},
     "tip_merge": {"en": "Choose the per-year databases (e.g. the *_transferred_<year>_*.mdb files) - all their records are "
                         "combined into ONE brand-new database (points, lines, polygons). Records with the same werilis_no "
@@ -378,6 +390,8 @@ class PgdbTransferTool(ToolFrame):
         self._staged, self._orig = {}, {}          # .gdb ↔ დროებითი .mdb (ძრავა .mdb-ზე მუშაობს)
         self._gdb_dst = self._gdb_final = None     # მიმღები .gdb და მისი ახალი FINAL ასლი
         self._final_path = None
+        self._final_origin = None                  # .mdb FINAL-ის წყარო (მიმღები) — სიზუსტის შესადარებლად
+        self._fidelity_text = None
 
         ttk.Label(self, text=self.tr("heading"), font=(UI_FONT, 13, "bold")).pack(anchor="w", pady=(0, 4))
         ttk.Label(self, text=self.tr("desc"), foreground=pal["muted"], wraplength=780,
@@ -805,6 +819,7 @@ class PgdbTransferTool(ToolFrame):
         src, dst = self._staged.get(src_o, src_o), self._staged.get(dst_o, dst_o)    # ძრავისთვის (.mdb)
         dst_gdb = gdbx.is_gdb(dst_o)
         self._final_path = None
+        self._final_origin, self._fidelity_text = None, None
         self._gdb_dst = self._gdb_final = None
         if year == "all":
             try:
@@ -837,6 +852,7 @@ class PgdbTransferTool(ToolFrame):
             if dst_gdb:
                 self._gdb_dst, self._gdb_final = dst_o, fpath
             elif final:
+                self._final_origin = dst
                 self._set_busy(True)
                 self.status.set(self.tr("st_copy"))
                 self._year_queue = list(year[1:])
@@ -880,6 +896,8 @@ class PgdbTransferTool(ToolFrame):
                 lines.append(self.tr("batch_stopped"))
             if self._final_shown():
                 lines.append(self.tr("sum_final", p=self._final_shown()))
+            if self._fidelity_text:
+                lines.append("\n" + self._fidelity_text)
             messagebox.showinfo("GIS_BOX", "\n".join(lines))
         self._batch_results = []
         return False
@@ -1099,6 +1117,25 @@ class PgdbTransferTool(ToolFrame):
                 except Exception as e:                 # noqa: BLE001
                     plan.undated_error = core.friendly_error(e)
                     log(str(e), "ERROR")
+            if not skip_main and not self._year_queue and (self._gdb_final or (self._final_path and self._final_origin)):
+                try:                                   # სიზუსტის შემოწმება: დომენები/ქვეტიპები/ველები + არსებული ჩანაწერები
+                    self.msg_queue.put(("status", self.tr("st_fidelity")))
+                    if self._gdb_final:
+                        orig, new = self._gdb_dst, self._gdb_final
+                        layers = list(gdbx.pick_layers(gdbx.inspect_gdb(new)).values())
+                    else:
+                        orig, new = self._final_origin, self._final_path
+                        layers = [lp.dst_name for lp in plan.layers]
+                    good, lines = fid.report(orig, new, layers)
+                    for ln in lines:
+                        log.raw(ln)
+                    viol = sum(len(v) for v in getattr(plan, "domain_violations", {}).values())
+                    self._fidelity_text = self.tr("fid_ok" if good else "fid_bad") + "\n" + "\n".join(lines[1:])
+                    if viol:
+                        self._fidelity_text += "\n" + self.tr("fid_viol", n=viol)
+                except Exception as e:                 # noqa: BLE001  (შემოწმება დამხმარეა; გადატანას არ აუქმებს)
+                    log("fidelity check could not run: {}".format(e), "WARN")
+                    self._fidelity_text = self.tr("fid_err", e=str(e)[:200])
             log.close()
             self._close_out(plan, "COMPLETED" if not skip_main else "completed (records without a date only)",
                             written=not skip_main)
@@ -1227,6 +1264,8 @@ class PgdbTransferTool(ToolFrame):
         msg = self.tr("st_done", n=n)
         if self._final_shown():
             msg += "\n\n" + self.tr("sum_final", p=self._final_shown())
+        if self._fidelity_text:
+            msg += "\n\n" + self._fidelity_text
         up = getattr(plan, "undated_plan", None)
         if up:
             msg += "\n\n" + self.tr("sum_undated", n=up.totals()["inserted"], p=up.dst_path)
