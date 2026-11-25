@@ -10,11 +10,8 @@
 გადაეცემა (ან იქვე გამოაქვს Excel ცხრილი). სუფთა ლოგიკა ``zone_intersect_core``-შია.
 """
 
-import glob
 import os
 import queue
-import re
-import shutil
 import threading
 
 import tkinter as tk
@@ -23,42 +20,13 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT
 from tools.tooltip import add_tip
-from tools.zone_intersect_core import collect_points, clip_areas, shallow_crossings
-
-SHALLOW_ANGLE_DEG = 15.0     # ამ კუთხეზე ბრტყელი გადაკვეთები გაფრთხილებით აღინიშნება
+from tools import zone_intersect_core as core
+from tools.zone_intersect_core import (collect_points, clip_areas, shallow_crossings,  # noqa: F401
+                                       SHALLOW_ANGLE_DEG, DEFAULT_OUT_NAME, DEFAULT_CUT_NAME, DEFAULT_REMAIN_NAME)
 from tools.template_sets import get as get_template_set
 
 ALL_SENTINEL = "— all —"          # „ყველა ზონა“ მარკერი value-combo-ში
-# ზონის ველის ავტო-შერჩევა: ჯერ id/FID-ის მსგავსი (ზუსტი დამთხვევა), მერე
-# შემცველობა; თუ ვერცერთი — პირველი ხელმისაწვდომი ველი. მომხმარებელი შეცვლის.
-_AUTO_FIELDS_EXACT = ("fid", "objectid", "oid", "gid", "id", "code",
-                      "zona", "zone", "ზონა")
-_AUTO_FIELDS_SUBSTR = ("fid", "objectid", "id", "zon", "type", "code", "name")
-
-# გამომავალი შრის ნაგულისხმევი საბაზისო სახელი (მომხმარებელი შეცვლის).
-# საბოლოო: <base><UTM ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
-DEFAULT_OUT_NAME = "Gas_Pipe_ProtZone_Crossing"
-
-# „მოჭრილი“ (ნაკვეთი ∩ ზონა) გეომეტრიის შესანახი სახელის შეთავაზება — იგივე
-# <base><UTM ზონა>_<N> სქემით (მომხმარებელი შეცვლის დიალოგში დაწკაპებისას).
-# მაგ. Parcel_clipped_part38_1
-DEFAULT_CUT_NAME = "Parcel_clipped_part"
-# ნაკვეთის „დარჩენილი“ (ნაკვეთი − ზონა) ნაწილის შეთავაზებული სახელი — იგივე სქემით,
-# მაგ. Parcel_remaining_part38_1
-DEFAULT_REMAIN_NAME = "Parcel_remaining_part"
-
-
-def _auto_zone_field(fields):
-    """ზონის ველის ავტო-შერჩევა: id/FID → substring → პირველი ველი."""
-    low = {f.lower(): f for f in fields}
-    for pref in _AUTO_FIELDS_EXACT:
-        if pref in low:
-            return low[pref]
-    for sub in _AUTO_FIELDS_SUBSTR:
-        for f in fields:
-            if sub in f.lower():
-                return f
-    return fields[0] if fields else ""
+_auto_zone_field = core.auto_zone_field      # თავსებადობისთვის; ლოგიკა core-შია
 
 
 ZTR = {
@@ -375,8 +343,7 @@ class ZoneIntersectTool(ToolFrame):
         zone_vars = {}
 
         def files_for(zone):
-            return glob.glob(os.path.join(src_var.get().strip(),
-                                          templates[zone] + ".*"))
+            return core.template_files(src_var.get().strip(), templates[zone])
 
         def build_zones():
             for w in zone_box.winfo_children():
@@ -437,18 +404,6 @@ class ZoneIntersectTool(ToolFrame):
             self.app.set_tool_config(cfg["id"], {"dest": dest_var.get().strip()})
             messagebox.showinfo("GIS_BOX", self.tr("copy_saved"))
 
-        def next_index(dest, base):
-            pat = re.compile(re.escape(base) + r"_(\d+)(?:\.|$)", re.IGNORECASE)
-            n = 0
-            try:
-                for f in os.listdir(dest):
-                    m = pat.match(f)
-                    if m:
-                        n = max(n, int(m.group(1)))
-            except OSError:
-                pass
-            return n + 1
-
         def do_copy():
             zones = [z for z, v in zone_vars.items() if v.get()]
             dest = dest_var.get().strip()
@@ -468,22 +423,11 @@ class ZoneIntersectTool(ToolFrame):
             total = 0
             created = []
             for zone in zones:
-                files = files_for(zone)
-                if not files:
-                    continue
-                base = templates[zone]
-                idx = next_index(dest, base)
-                new_base = f"{base}_{idx}"
-                for src in files:
-                    fname = os.path.basename(src)
-                    rest = fname[len(base):]
-                    dst = os.path.join(dest, new_base + rest)
-                    try:
-                        shutil.copy2(src, dst)
-                        total += 1
-                    except OSError as e:
-                        self.app.log(f"✗ {new_base}{rest}: {e}")
-                created.append(new_base)
+                new_base, n = core.copy_template(src_var.get().strip(), templates[zone], dest,
+                                                 log=self.app.log)
+                if new_base:
+                    total += n
+                    created.append(new_base)
 
             msg = self.tr("copy_done", names=", ".join(created), n=total, dest=dest)
             self.app.log("— " + msg)
@@ -547,23 +491,7 @@ class ZoneIntersectTool(ToolFrame):
 
     def _zone_meta_worker(self, zone):
         try:
-            import pyogrio
-            df = pyogrio.read_dataframe(zone, read_geometry=False)
-            meta = {}
-            for col in df.columns:
-                try:
-                    vals = sorted({str(v) for v in df[col].tolist()
-                                   if v is not None and str(v).strip() != ""})
-                except Exception:                  # noqa: BLE001
-                    vals = []
-                if vals:
-                    meta[str(col)] = vals
-            # FID ფსევდო-ველი — რომ ატრიბუტ-გარეშე shp-საც (მაგ. სუფთა ხაზი)
-            # ჰქონდეს ავტო-შესავსები ველი და ობიექტის არჩევა ინდექსით.
-            n = len(df)
-            if 0 < n <= 1000:
-                meta["FID"] = [str(i) for i in range(n)]
-            self.msg_queue.put(("zonemeta", meta))
+            self.msg_queue.put(("zonemeta", core.read_zone_meta(zone)))
         except Exception as e:                     # noqa: BLE001
             self.msg_queue.put(("zoneerr", str(e)))
 
@@ -618,41 +546,9 @@ class ZoneIntersectTool(ToolFrame):
 
     def _worker(self, parcel, zone, out, field, value):
         try:
-            import geopandas as gpd
-
-            pgdf = gpd.read_file(parcel)
-            zgdf = gpd.read_file(zone)
-
-            # ზონის ფილტრი: ატრიბუტით ან FID-ით (რიგის ინდექსით)
-            if value is not None and field:
-                if field in zgdf.columns:
-                    zgdf = zgdf[zgdf[field].astype(str) == str(value)]
-                elif field == "FID":
-                    try:
-                        i = int(value)
-                        if 0 <= i < len(zgdf):
-                            zgdf = zgdf.iloc[[i]]
-                    except (ValueError, TypeError):
-                        pass
-
-            # CRS — ზონა ნაკვეთის სისტემაში
-            target_crs = pgdf.crs
-            from tools.zone_intersect_core import require_metric_crs
-            require_metric_crs(target_crs)
-            if target_crs is not None and zgdf.crs is not None \
-                    and zgdf.crs != target_crs:
-                zgdf = zgdf.to_crs(target_crs)
-
-            parcels = [g for g in pgdf.geometry if g is not None]
-            zones = [g for g in zgdf.geometry if g is not None]
-            pts = collect_points(parcels, zones)
-            areas = clip_areas(parcels, zones)
-            shallow = shallow_crossings(parcels, zones, pts, SHALLOW_ANGLE_DEG)
-
-            self.msg_queue.put(("result", {
-                "points": pts, "crs": target_crs, "out": out, "areas": areas,
-                "shallow": shallow,
-            }))
+            res = core.compute(parcel, zone, field, value, SHALLOW_ANGLE_DEG)
+            res["out"] = out
+            self.msg_queue.put(("result", res))
         except ImportError as e:
             self.msg_queue.put(("dep_err", str(e)))
         except Exception as e:                     # noqa: BLE001
@@ -660,18 +556,11 @@ class ZoneIntersectTool(ToolFrame):
 
     @staticmethod
     def _sanitize(text):
-        s = re.sub(r"[^0-9A-Za-z._-]+", "_", str(text or "")).strip("_")
-        return s or "zone"
+        return core.sanitize(text)
 
     def _write_shp(self, pts, crs, out_path):
-        """წერტილების ჩაწერა shapefile-ად (მთავარ ნაკადში — მსუბუქია)."""
-        import geopandas as gpd
-        from shapely.geometry import Point
-        rows = [{"N": i, "X": round(x, 3), "Y": round(y, 3)}
-                for i, (x, y) in enumerate(pts, start=1)]
-        geoms = [Point(x, y) for x, y in pts]
-        gdf = gpd.GeoDataFrame(rows, geometry=geoms, crs=crs)
-        gdf.to_file(out_path, driver="ESRI Shapefile", encoding="utf-8")
+        """წერტილების ჩაწერა shapefile-ად — core.write_points."""
+        core.write_points(pts, crs, out_path)
 
     # ---- queue ----
     def _poll_queue(self):
@@ -706,25 +595,10 @@ class ZoneIntersectTool(ToolFrame):
 
     @staticmethod
     def _zone_num_from_crs(crs):
-        """CRS → UTM ზონის ნომერი (37/38…) ან '' — გამომავალ სახელში ჩასასმელად."""
-        try:
-            epsg = crs.to_epsg() if crs is not None else None
-        except Exception:                          # noqa: BLE001
-            epsg = None
-        if epsg and 32601 <= epsg <= 32660:        # WGS84 / UTM N
-            return str(epsg - 32600)
-        if epsg and 32701 <= epsg <= 32760:        # WGS84 / UTM S
-            return str(epsg - 32700)
-        return ""
+        return core.zone_num_from_crs(crs)
 
     def _next_free_path(self, out, base):
-        """out/base_<N>.shp — პირველი თავისუფალი N (1, 2, 3…)."""
-        n = 1
-        while True:
-            cand = os.path.join(out, "{}_{}.shp".format(base, n))
-            if not os.path.exists(cand):
-                return cand
-            n += 1
+        return core.next_free_path(out, base)
 
     def _on_result(self, res):
         self._reset()
@@ -748,10 +622,7 @@ class ZoneIntersectTool(ToolFrame):
             messagebox.showinfo("GIS_BOX", self.tr("warn_none"))
             return
         # სახელი: <base><ზონა>_<N> — მაგ. Gas_Pipe_ProtZone_Crossing38_1
-        base = self._sanitize(self.name_var.get().strip() or self.DEFAULT_NAME)
-        znum = self._zone_num_from_crs(res["crs"])
-        if znum and not base.endswith(znum):
-            base = base + znum
+        base = core.output_base(self.name_var.get(), self.DEFAULT_NAME, res["crs"])
         out_path = self._next_free_path(res["out"], base)
         try:
             self._write_shp(pts, res["crs"], out_path)
@@ -777,12 +648,7 @@ class ZoneIntersectTool(ToolFrame):
 
     def _shallow_message(self, shallow):
         """გაფრთხილების ტექსტი: წერტილების ნომრები + უმცირესი კუთხე + გაძლიერება."""
-        import math
-        nums = ", ".join(str(n) for n, _a in shallow)
-        amin = min(a for _n, a in shallow)
-        k = 1.0 / math.tan(math.radians(max(amin, 0.5)))
-        return self.tr("warn_shallow", nums=nums, deg=round(amin, 1),
-                       lim=int(SHALLOW_ANGLE_DEG), k=round(k, 1))
+        return self.tr("warn_shallow", **core.shallow_summary(shallow, SHALLOW_ANGLE_DEG))
 
     # ---- „მოჭრილი“ (ნაკვეთი ∩ ზონა) და „დარჩენილი“ (ნაკვეთი − ზონა) შენახვა ----
     def _save_cut_geometry(self):
@@ -812,22 +678,9 @@ class ZoneIntersectTool(ToolFrame):
             "GIS_BOX", self.tr(ask_key), initialvalue=suggested, parent=self)
         if not name or not name.strip():
             return
-        chosen = self._sanitize(name.strip())
-        out_path = os.path.join(out, chosen + ".shp")
-        if os.path.exists(out_path):
-            # სახელი დაკავებულია (მაგ. იგივე შეთავაზება ხელახლა მიიღო) — უკვე
-            # დართული _<N> მოვაცილოთ და იქიდან ვიპოვოთ შემდეგი თავისუფალი,
-            # რომ "_1_1"-ის მსგავსი ორმაგი სუფიქსი არ დაერთოს.
-            stem = re.sub(r"_\d+$", "", chosen) or chosen
-            out_path = self._next_free_path(out, stem)
+        out_path = core.piece_path(out, name)      # დაკავებულზე — შემდეგი თავისუფალი _<N>
         try:
-            import geopandas as gpd
-            parts = list(geom.geoms) if hasattr(geom, "geoms") else [geom]
-            parts = [g for g in parts if g.area > 0]          # ხაზ/წერტილ-ნარჩენები არა
-            rows = [{"N": i, "Area_m2": round(g.area, 5)}
-                    for i, g in enumerate(parts, start=1)]
-            gdf = gpd.GeoDataFrame(rows, geometry=parts, crs=self._last_crs)
-            gdf.to_file(out_path, driver="ESRI Shapefile", encoding="utf-8")
+            core.write_piece(geom, self._last_crs, out_path)
         except Exception as e:                  # noqa: BLE001
             messagebox.showerror(self.tr("err"), str(e))
             return
