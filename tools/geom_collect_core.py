@@ -192,14 +192,28 @@ def dated_output_path(path, today=None):
     return "{}_{}{}".format(stem, day, ext)
 
 
+def unique_output_path(path):
+    """``path`` if free, else ``<stem>_2<ext>``, ``_3`` … — an existing GeoPackage is never replaced."""
+    if not os.path.exists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 2
+    while os.path.exists("{}_{}{}".format(stem, n, ext)):
+        n += 1
+    return "{}_{}{}".format(stem, n, ext)
+
+
 def collect_to_geopackage(files, out_path, target_epsg=None,
-                          log=None, progress=None, cancel=None):
+                          log=None, progress=None, cancel=None, assume_missing_crs=True):
     """ფაილების გეომეტრიების შეგროვება ერთ GeoPackage-ში (3 შრე).
 
     files       -> SHP/DXF/DWG გზების სია
     out_path    -> გამომავალი .gpkg
     target_epsg -> სამიზნე EPSG (int) ან None (ავტომატური: პირველი ნაპოვნი CRS)
     log/progress/cancel -> იგივე კონვენცია, რაც სხვა ხელსაწყოებში
+    assume_missing_crs -> True: CRS-ის გარეშე ნაწილს სამიზნე CRS ენიჭება (გაფრთხილებით, კლასიკური ქცევა);
+                          False: ასეთი ნაწილი გამოტოვდება და errors-ში ჩაიწერება (CRS-ს არ ვგულისხმობთ).
+    out_path უკვე არსებობს -> FileExistsError (ზემოდან არ ვწერთ; იხ. unique_output_path).
 
     აბრუნებს dict-ს: points/lines/polygons (რიცხვები), files_ok, files_skipped,
     errors ([(path, note)]), out_path, out_files, crs, cancelled.
@@ -252,29 +266,33 @@ def collect_to_geopackage(files, out_path, target_epsg=None,
 
     def _normalize(gdf):
         """ყველა ნაწილი ერთ CRS-ზე — ცნობილი განსხვავებული → რეპროექცია;
-        უცნობი → სამიზნედ ჩაითვლება."""
+        უცნობი → სამიზნედ ჩაითვლება (assume_missing_crs) ან None (გამოტოვება)."""
         if target is None:
             return gdf
         if gdf.crs is not None and gdf.crs != target:
             log("ℹ reprojecting {} -> {}".format(gdf.crs.to_string(), target))
             return gdf.to_crs(target)
         if gdf.crs is None:
+            src = ", ".join(sorted(set(gdf["src_file"].astype(str))))
+            if not assume_missing_crs:
+                log("⚠ {}: no CRS - skipped ({} feature(s)); the output CRS is not assumed".format(src, len(gdf)))
+                errors.append((src, "no CRS - skipped ({} feature(s))".format(len(gdf))))
+                return None
             log("⚠ part without CRS: the target CRS is ASSUMED (coordinates not transformed)")
             return gdf.set_crs(target, allow_override=True)
         return gdf
 
-    # ჩაწერა — ცარიელი შრეები გამოტოვდება
+    # ჩაწერა — ცარიელი შრეები გამოტოვდება; არსებულ ფაილს ზემოდან არ ვწერთ
     if os.path.exists(out_path):
-        os.remove(out_path)
+        raise FileExistsError(out_path)
     counts = {"point": 0, "line": 0, "polygon": 0}
     out_files = []
     first = True
     for bucket, layer_name in (("point", LAYER_POINTS), ("line", LAYER_LINES),
                                ("polygon", LAYER_POLYGONS)):
-        parts = buckets[bucket]
+        parts = [p for p in (_normalize(p) for p in buckets[bucket]) if p is not None]
         if not parts:
             continue
-        parts = [_normalize(p) for p in parts]
         merged = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True),
                                   crs=target)
         counts[bucket] = len(merged)

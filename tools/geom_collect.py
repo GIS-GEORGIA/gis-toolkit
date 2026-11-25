@@ -20,7 +20,7 @@ from tools.base import ToolFrame
 from tools.platform_utils import UI_FONT, open_path, default_desktop
 from tools.tooltip import add_tip
 from tools.geom_collect_core import (
-    iter_geometry_files, collect_to_geopackage, dated_output_path,
+    iter_geometry_files, collect_to_geopackage, dated_output_path, unique_output_path,
     VECTOR_FORMATS, GEOM_EXT, normalize_exts,
 )
 
@@ -341,7 +341,8 @@ class GeomCollectTool(ToolFrame):
         if not v:
             return
         source, base_out, epsg, exts = v
-        out = dated_output_path(base_out)        # …_DDMMYY.gpkg — შეგროვების თარიღით
+        # …_DDMMYY.gpkg — შეგროვების თარიღით; დაკავებულზე _2, _3 … (არსებულს ზემოდან არ ვწერთ)
+        out = unique_output_path(dated_output_path(base_out))
         files = iter_geometry_files(source, exts, self.recursive_var.get())
         if not files:
             messagebox.showinfo("GIS_BOX", self.tr("count_none"))
