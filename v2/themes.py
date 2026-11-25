@@ -49,4 +49,10 @@ QScrollBar::handle:horizontal {{ background: {border}; border-radius: 4px; min-w
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 QToolTip {{ background: {surface}; color: {text}; border: 1px solid {border}; }}
+QRadioButton::indicator {{ width: 12px; height: 12px; border-radius: 7px; border: 1px solid {muted}; background: {surface}; }}
+QRadioButton::indicator:checked {{ border: 4px solid {accent}; width: 6px; height: 6px; background: {surface}; }}
+QRadioButton::indicator:disabled {{ border-color: {border}; }}
+QCheckBox::indicator {{ width: 12px; height: 12px; border-radius: 3px; border: 1px solid {muted}; background: {surface}; }}
+QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
+QCheckBox::indicator:disabled {{ border-color: {border}; }}
 """.format(**p)
