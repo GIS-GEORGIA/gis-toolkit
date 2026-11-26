@@ -115,9 +115,19 @@ CTR = {
                          "შეგროვების თარიღი (დდთთწწ) ავტომატურად ემატება, მაგ. "
                          "collected_geometry_041126.gpkg."},
     "tip_crs":    {"en": "Coordinate system for the output. “auto” uses the first "
-                         "CRS found; files without a CRS are assumed to match it.",
+                         "CRS found. Files without a CRS are skipped unless the box "
+                         "below is ticked.",
                    "ka": "გამომავალი კოორდინატთა სისტემა. „ავტომატური“ იყენებს "
-                         "პირველ ნაპოვნ CRS-ს; უCRS ფაილები მასში ჩაითვლება."},
+                         "პირველ ნაპოვნ CRS-ს. CRS-ის გარეშე ფაილები გამოტოვდება, "
+                         "თუ ქვემოთ თოლია არ არის მონიშნული."},
+    "assume":     {"ka": "CRS-ის გარეშე ფაილები ჩაითვალოს გამომავალ CRS-ად (არ არის რეკომენდებული)",
+                   "en": "Treat files without a CRS as the output CRS (not recommended)"},
+    "assume_tip": {"ka": "გამორთულია: CRS-ის გარეშე ფაილები გამოტოვდება და ლოგში ჩაიწერება. ჩართვისას მათ "
+                         "კოორდინატებს გამომავალი CRS მიენიჭება გადაყვანის გარეშე — მხოლოდ მაშინ, თუ დარწმუნებული ხარ.",
+                   "en": "Off: files without a CRS are skipped and listed in the log. On: their coordinates get the "
+                         "output CRS without any transformation - only if you are sure."},
+    "no_crs_skipped": {"en": "{n} file(s) without a CRS were skipped (see the log).",
+                       "ka": "CRS-ის გარეშე {n} ფაილი გამოტოვდა (იხ. ლოგი)."},
     "tip_recursive": {"en": "Also scan subfolders.", "ka": "ქვესაქაღალდეებიც დაისკანოს."},
     "tip_count":  {"en": "Count matching files without reading them.",
                    "ka": "ფაილების დათვლა წაკითხვის გარეშე."},
@@ -189,6 +199,12 @@ class GeomCollectTool(ToolFrame):
                              width=28, values=self._crs_labels),
                 self.tr("tip_crs")).grid(row=2, column=1, sticky="w",
                                          padx=(6, 6), pady=(6, 0))
+        # CRS-ის გარეშე ფაილები: ნაგულისხმევად გამოტოვება (CRS-ს არასდროს ვგულისხმობთ თავისით)
+        self.assume_var = tk.BooleanVar(value=bool(st.get("assume_missing_crs",
+                                                          saved.get("assume_missing_crs", False))))
+        add_tip(ttk.Checkbutton(grid, text=self.tr("assume"), variable=self.assume_var),
+                self.tr("assume_tip")).grid(row=3, column=1, columnspan=2, sticky="w",
+                                            padx=(6, 6), pady=(4, 0))
 
         # --- მოსაძებნი ფორმატები (მონიშვნა) ---
         saved_exts = set(st.get("exts") or saved.get("exts") or GEOM_EXT)
@@ -259,6 +275,7 @@ class GeomCollectTool(ToolFrame):
         st["recursive"] = self.recursive_var.get()
         st["crs_epsg"] = self._crs_by_label.get(self.crs_var.get())
         st["exts"] = list(self._selected_exts())
+        st["assume_missing_crs"] = bool(self.assume_var.get())
 
     # ---- ფორმატები ----
     def _set_all_formats(self, value):
@@ -350,9 +367,10 @@ class GeomCollectTool(ToolFrame):
         if not messagebox.askyesno(self.tr("confirm_t"),
                                    self.tr("confirm_m", n=len(files), out=out)):
             return
+        assume = bool(self.assume_var.get())
         self.app.set_tool_config(self.tid,
                                  {"source": source, "out": base_out,
-                                  "exts": list(exts)})
+                                  "exts": list(exts), "assume_missing_crs": assume})
 
         self.busy = True
         self._cancel_event.clear()
@@ -362,16 +380,16 @@ class GeomCollectTool(ToolFrame):
         self.status.set(self.tr("start", n=len(files)))
         self.app.log("— " + self.tr("start", n=len(files)))
 
-        threading.Thread(target=self._worker, args=(files, out, epsg),
+        threading.Thread(target=self._worker, args=(files, out, epsg, assume),
                          daemon=True).start()
 
-    def _worker(self, files, out, epsg):
+    def _worker(self, files, out, epsg, assume=False):
         try:
             result = collect_to_geopackage(
                 files, out, target_epsg=epsg,
                 log=lambda m: self.msg_queue.put(("log", m)),
                 progress=lambda i, n: self.msg_queue.put(("progress", (i, n))),
-                cancel=self._cancel_event.is_set)
+                cancel=self._cancel_event.is_set, assume_missing_crs=assume)
             self.msg_queue.put(("done", result))
         except ImportError as e:
             self.msg_queue.put(("dep_err", str(e)))
@@ -439,6 +457,13 @@ class GeomCollectTool(ToolFrame):
         msg = self.tr("done", p=result["points"], l=result["lines"],
                       g=result["polygons"], ok=result["files_ok"],
                       sk=result["files_skipped"], out=result["out_path"])
+        no_crs = set()                               # notes are per part; one note may name several files
+        for p, note in result.get("errors", []):
+            if str(note).startswith("no CRS"):
+                no_crs.update(str(p).split(", "))   # the core joins file names with ", "
+        n_no_crs = len(no_crs)
+        if n_no_crs:
+            msg += "\n\n⚠ " + self.tr("no_crs_skipped", n=n_no_crs)
         self.status.set(msg)
         self.app.log("— " + msg)
         messagebox.showinfo("GIS_BOX", msg)

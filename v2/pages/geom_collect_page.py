@@ -17,13 +17,7 @@ from v2 import workers
 from v2.i18n import tr
 
 CRS_CHOICES = [(None, None), ("UTM 37N — EPSG:32637", 32637), ("UTM 38N — EPSG:32638", 32638)]
-EXTRA = {
-    "assume": {"ka": "CRS-ის გარეშე ფაილები ჩაითვალოს გამომავალ CRS-ად (არ არის რეკომენდებული)",
-               "en": "Treat files without a CRS as the output CRS (not recommended)"},
-    "assume_tip": {"ka": "გამორთულია: CRS-ის გარეშე ფაილები გამოტოვდება და ლოგში ჩაიწერება. ჩართვისას მათ "
-                         "კოორდინატებს გამომავალი CRS მიენიჭება გადაყვანის გარეშე — მხოლოდ მაშინ, თუ დარწმუნებული ხარ.",
-                   "en": "Off: files without a CRS are skipped and listed in the log. On: their coordinates get the "
-                         "output CRS without any transformation - only if you are sure."},
+EXTRA = {                              # "assume" / "assume_tip" come from the classic CTR (same wording in both)
     "crs_tip": {"ka": "გამომავალი კოორდინატთა სისტემა. „ავტომატური“ იყენებს პირველ ნაპოვნ CRS-ს; სხვა CRS-ის ფაილები "
                       "გადაიყვანება. CRS-ის გარეშე ფაილები — იხ. ქვემოთ მოცემული ჩამრთველი.",
                 "en": "Output coordinate system. “auto” uses the first CRS found; files in another CRS are reprojected. "

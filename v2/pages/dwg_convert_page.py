@@ -17,13 +17,7 @@ from v2 import workers
 from v2.i18n import tr
 
 CRS_CHOICES = [(None, None), ("UTM 37N — EPSG:32637", 32637), ("UTM 38N — EPSG:32638", 32638)]
-EXTRA = {
-    "assume": {"ka": "CRS-ის გარეშე ნახაზებს მიენიჭოს არჩეული CRS (კოორდინატები არ გადაიყვანება)",
-               "en": "Label drawings without a CRS with the selected CRS (coordinates are not transformed)"},
-    "assume_tip": {"ka": "DXF/DWG-ს ჩვეულებრივ CRS არ აქვს. ჩართე მხოლოდ მაშინ, თუ იცი, რომ ნახაზი არჩეულ სისტემაშია "
-                         "(მაგ. UTM 38N). გამორთულზე ასეთი ფაილი CRS-ის გარეშე ჩაიწერება — არაფერი იკარგება.",
-                   "en": "DXF/DWG usually have no CRS. Enable only if you know the drawing is in the selected system "
-                         "(e.g. UTM 38N). When off, such a file is written without a CRS - nothing is lost."},
+EXTRA = {                              # "assume" / "assume_tip" come from the classic DWT (same wording in both)
     "no_overwrite": {"ka": "არსებულ შედეგს არაფერი ეცვლება — ახალი იწერება თავისუფალი სახელით (_2, _3 …).",
                      "en": "Existing results are never replaced - new ones get a free name (_2, _3 …)."},
 }
