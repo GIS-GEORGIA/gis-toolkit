@@ -34,6 +34,7 @@ QPushButton#primary:disabled {{ background: {border}; color: {muted}; }}
 QLabel#title {{ font-size: 20px; font-weight: 600; background: transparent; }}
 QLabel#muted, QLabel#desc {{ color: {muted}; background: transparent; }}
 QLabel#warn {{ color: {warn}; background: transparent; }}
+QLabel#accent {{ color: {accent}; background: transparent; }}
 QLabel#toast {{ background: {accent}; color: {accent_text}; border-radius: 8px; padding: 10px 16px; font-weight: 600; }}
 QLabel#toast[kind="error"] {{ background: {danger}; color: #ffffff; }}
 QMenuBar, QMenu, QStatusBar {{ background: {surface}; }}

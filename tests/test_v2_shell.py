@@ -202,12 +202,16 @@ def test_theme_and_language_switch_persist(win):
 
 
 def test_legacy_page_opens_classic_window(win, monkeypatch):
+    legacy = [t for t in registry.TOOLS if t.kind == "legacy"]      # whichever tool is still classic-only
+    if not legacy:
+        pytest.skip("every tool is native")
+    tool = legacy[0]
     calls = []
     monkeypatch.setattr(launcher, "launch_legacy", lambda key: calls.append(key))
-    win.show_tool("db_transfer")
+    win.show_tool(tool.id)
     from PySide6.QtWidgets import QPushButton
-    [b for b in win.pages["db_transfer"].findChildren(QPushButton) if b.objectName() == "primary"][0].click()
-    assert calls == ["db_transfer"]
+    [b for b in win.pages[tool.id].findChildren(QPushButton) if b.objectName() == "primary"][0].click()
+    assert calls == [tool.legacy_key]
 
 
 def test_notify_toast(win):

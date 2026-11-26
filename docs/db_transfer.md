@@ -1,7 +1,7 @@
 # ბაზებს შორის მონაცემთა გადატანა — სრული დოკუმენტაცია
 
 ხელსაწყო: **ბაზებს შორის მონაცემთა გადატანა / Database Data Transfer** (GIS_BOX, გვერდითა მენიუდან).
-კოდი: `tools/pgdb_transfer.py` (ფანჯარა) და `tools/pgdb_transfer_core.py` (მთელი ლოგიკა, UI-ის გარეშე).
+კოდი: `tools/pgdb_transfer.py` (კლასიკური ფანჯარა), `v2/pages/db_transfer_page.py` (V2-ის გვერდი), `tools/pgdb_transfer_flow.py` (ორივე ფანჯრის საერთო სამუშაო ნაბიჯები და ტექსტები, UI-ის გარეშე) და `tools/pgdb_transfer_core.py` (ძრავა: ODBC, ანალიზი, დუბლიკატები, ჩაწერა).
 
 ---
 
