@@ -58,7 +58,7 @@ TOOLS = [
        kind="native", page="v2.pages.db_transfer_page:DbTransferPage"),
     _t("gdb2pg", "data", "GDB → PostGIS", "GDB → PostGIS",
        "GDB/MDB-ის შრეების იმპორტი PostgreSQL/PostGIS-ში.", "Import GDB/MDB layers into PostGIS.",
-       key="GDB → PostGIS"),
+       key="GDB → PostGIS", kind="native", page="v2.pages.gdb2pg_page:Gdb2PgPage"),
     _t("geom_collect", "data", "გეომეტრიების შეგროვება", "Geometry → GeoPackage",
        "SHP/DXF/DWG გეომეტრიების შეგროვება ერთ GeoPackage-ში.", "Collect SHP/DXF/DWG geometry in one GeoPackage.",
        key="Geometry → GeoPackage",
