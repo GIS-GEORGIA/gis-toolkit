@@ -55,4 +55,11 @@ QRadioButton::indicator:disabled {{ border-color: {border}; }}
 QCheckBox::indicator {{ width: 12px; height: 12px; border-radius: 3px; border: 1px solid {muted}; background: {surface}; }}
 QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
 QCheckBox::indicator:disabled {{ border-color: {border}; }}
+QTabWidget::pane {{ border: 1px solid {border}; border-radius: 6px; top: -1px; background: {window}; }}
+QTabBar::tab {{ background: {side}; color: {muted}; border: 1px solid {border}; border-bottom: none;
+    border-top-left-radius: 6px; border-top-right-radius: 6px; padding: 6px 14px; margin-right: 2px; }}
+QTabBar::tab:selected {{ background: {surface}; color: {text}; font-weight: 600; border-bottom: 2px solid {accent}; }}
+QTabBar::tab:hover:!selected {{ background: {hover}; color: {text}; }}
+QSplitter::handle {{ background: {border}; }}
+QSplitter::handle:horizontal {{ width: 3px; }}
 """.format(**p)
