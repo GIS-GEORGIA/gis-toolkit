@@ -291,3 +291,35 @@ def test_deferred_calls_are_dropped_when_the_page_is_deleted(env, monkeypatch):
         QCoreApplication.processEvents()
         time.sleep(0.01)
     assert errors == [] and ran == [] and sched == []
+
+
+@needs_qt
+def test_task_callbacks_are_skipped_when_the_page_is_deleted(env, monkeypatch):
+    """A task started by a page must not call back into it once it is deleted ("Internal C++ object (QComboBox)
+    already deleted" in _fill_layers -> _source). The shell still finishes: task cleared, busy_changed(False)."""
+    import sys
+    import threading
+    import shiboken6
+    from v2.pages.gdb2pg_page import Gdb2PgPage
+    w, _c, _s, settings, src = env
+    errors, busy, gate = [], [], threading.Event()
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: errors.append(exc[1]))
+    w.busy_changed.connect(busy.append)
+    monkeypatch.setattr(core, "list_layers", lambda o, s: gate.wait(10) and [core.LayerInfo("roads", "Line")])
+    p = Gdb2PgPage(w, settings_path=settings)
+    p._sources = {"city.gdb": os.path.join(src, "city.gdb")}
+    p.source_combo.addItem("city.gdb")
+    p.load_layers()                                        # on_done -> self._fill_layers -> self._source()
+    assert w.task is not None
+    shiboken6.delete(p)                                    # page gone while the task still runs
+    gate.set()
+    assert wait_for(lambda: w.task is None)
+    assert errors == [] and busy[-1] is False
+
+    # on_log bound to a page method: the owner is inferred, the late log line is dropped
+    p2, gate2 = Gdb2PgPage(w, settings_path=settings), threading.Event()
+    w.run(lambda ctx: gate2.wait(10) and ctx.log("late"), "t.log", on_log=p2._log)
+    shiboken6.delete(p2)
+    gate2.set()
+    assert wait_for(lambda: w.task is None)
+    assert errors == [] and busy[-1] is False

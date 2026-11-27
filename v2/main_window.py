@@ -6,7 +6,8 @@ import datetime
 import importlib
 import os
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+import shiboken6
+from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
@@ -298,13 +299,27 @@ class MainWindow(QMainWindow):
             page.set_file(path)
 
     # ------------------------------------------------------------------ background tasks
-    def run(self, fn, tool, inputs=None, params=None, on_done=None, success_msg=None, on_log=None):
-        """Run a GIS function in a worker thread with progress, cancel and notifications."""
+    def run(self, fn, tool, inputs=None, params=None, on_done=None, success_msg=None, on_log=None, owner=None):
+        """Run a GIS function in a worker thread with progress, cancel and notifications.
+
+        ``owner`` is the QObject (usually the page) that ``on_done`` / ``on_log`` belong to; it defaults to the
+        object a bound-method callback is bound to. If the owner is deleted while the task runs, those callbacks
+        are skipped (they would touch deleted widgets); the shell still finishes the task and clears ``task``."""
         if self.task is not None:
             return None
+        if owner is None:
+            owner = next((o for o in (getattr(cb, "__self__", None) for cb in (on_done, on_log))
+                          if isinstance(o, QObject)), None)
+
+        def alive():
+            return owner is None or shiboken6.isValid(owner)
+
+        def log(msg):
+            if alive():
+                on_log(msg)
 
         def done(result):
-            if on_done:
+            if on_done and alive():
                 on_done(result)
             if success_msg:
                 self.notify(success_msg)
@@ -336,7 +351,7 @@ class MainWindow(QMainWindow):
         self.busy_changed.emit(True)
         self.task = workers.run_task(fn, tool, inputs, params, on_done=done, on_error=failed,
                                      on_cancelled=cancelled, on_progress=progress, on_finished=finished,
-                                     on_log=on_log)
+                                     on_log=log if on_log else None)
         return self.task
 
     def cancel_task(self):
