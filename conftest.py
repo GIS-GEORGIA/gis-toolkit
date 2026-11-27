@@ -39,8 +39,18 @@ def pytest_sessionfinish(session, exitstatus):
         return
     app = QApplication.instance()
     if app is not None:
+        import gc
+        from PySide6.QtCore import QCoreApplication, QEvent
         app.clipboard().clear()
+        # Destroy the windows the tests left behind and collect them NOW, while Qt is still alive,
+        # instead of during interpreter finalization (Linux / Python 3.11 aborted there with
+        # "bool_dealloc" - a refcount error in a C extension - after all tests had passed).
+        for w in app.topLevelWidgets():
+            w.close()
+            w.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
+        gc.collect()
 
 
 @pytest.fixture(autouse=True)
