@@ -323,3 +323,45 @@ def test_task_callbacks_are_skipped_when_the_page_is_deleted(env, monkeypatch):
     gate2.set()
     assert wait_for(lambda: w.task is None)
     assert errors == [] and busy[-1] is False
+
+
+def test_run_import_records_a_cancel_between_layers(monkeypatch):
+    seen = []
+
+    def one_layer(ogr2ogr, source, layer, pg, opt, log, tag, **kw):
+        seen.append(layer)
+        return core.LayerResult(layer, True, 0.0)
+    monkeypatch.setattr(core, "_sync_layer_full", one_layer)
+    state = {"n": 0}
+
+    def should_cancel():                              # cancel is pressed while layer 1 runs
+        state["n"] += 1
+        return state["n"] > 1
+    res = core.run_import("ogr2ogr", "src.gdb", ["a", "b", "c"], core.PgConfig(), core.ImportOptions(),
+                          lambda level, msg: None, should_cancel=should_cancel)
+    assert res.cancelled and seen == ["a"] and [r.layer for r in res.results] == ["a"]
+    full = core.run_import("ogr2ogr", "src.gdb", ["a", "b"], core.PgConfig(), core.ImportOptions(),
+                           lambda level, msg: None)
+    assert not full.cancelled and len(full.results) == 2
+
+
+@needs_qt
+def test_cancelled_import_is_reported_as_cancelled_not_done(env, monkeypatch):
+    """Before: the shell said "Done" and "OK 1, failed 0" although the user had cancelled the import."""
+    w, calls, _s, _set, src = env
+    p = _page(w, src, answers=True)
+
+    def cancelled_import(ogr2ogr, source, layers, pg, opt, log, **kw):
+        r = core.RunResult(started="x", cancelled=True)
+        r.results = [core.LayerResult(layers[0], True, 0.1)]
+        return r
+    monkeypatch.setattr(core, "run_import", cancelled_import)
+    p.layers_list.selectAll()
+    p.start_import()
+    assert wait_for(lambda: w.task is None and p._z("cancelled_after", n=2, done=1, ok=1, fail=0)
+                    in p.log_view.toPlainText())
+    assert w.status_label.text() == w.t("cancelled")
+    assert p._z("done", ok=1, fail=0) not in p.log_view.toPlainText()
+    for lang in ("ka", "en"):
+        from v2.pages import gdb2pg_page
+        assert "{done}" in gdb2pg_page.EXTRA["cancelled_after"][lang]

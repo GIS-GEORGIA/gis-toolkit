@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 
 from tools import gdb2postgis_cli as cli
 from tools import gdb2postgis_core as core
+from v2 import workers
 
 EXTRA = {
     "ow_confirm": {"ka": "რეჟიმი „{mode}“ არსებულ ცხრილს თავიდან ქმნის — მისი ახლანდელი შიგთავსი ჩანაცვლდება.\n\n"
@@ -50,6 +51,10 @@ EXTRA = {
     "shared_note": {"ka": "„დამახსოვრება“ იმავე ადგილას ინახავს, რასაც კლასიკური ხელსაწყო და განრიგით გაშვება კითხულობს.",
                     "en": "\"Remember\" saves to the same place the classic tool and the scheduled run read."},
     "no_overwrite_needed": {"ka": "არსებული ცხრილი არ ჩანაცვლდება.", "en": "No existing table is replaced."},
+    "cancelled_after": {"ka": "გაუქმდა: {n} შრიდან დამუშავდა {done} (OK {ok}, ჩავარდა {fail}); "
+                              "დანარჩენი შრეები არ დამუშავებულა.",
+                        "en": "Cancelled: {done} of {n} layer(s) processed (OK {ok}, failed {fail}); "
+                              "the remaining layers were not touched."},
 }
 UNITS = ("minutes", "hours", "days")
 
@@ -551,8 +556,13 @@ class Gdb2PgPage(QWidget):
         def work(ctx):
             def log_cb(level, message):            # the core masks the password; it is never on the command line
                 ctx.log(f"{level}: {message}")
-            return core.run_import(ogr2ogr, src, layers, pg, opt, log_cb, should_cancel=ctx.cancelled,
-                                   ogrinfo_path=ogrinfo, state=SyncState(), audit=AuditStore(), profile="")
+            res = core.run_import(ogr2ogr, src, layers, pg, opt, log_cb, should_cancel=ctx.cancelled,
+                                  ogrinfo_path=ogrinfo, state=SyncState(), audit=AuditStore(), profile="")
+            if res.cancelled:      # stopped between layers: say so (not "Done") and show what was finished
+                ctx.log("— " + self._z("cancelled_after", n=len(layers), done=len(res.results),
+                                       ok=res.ok_count, fail=res.fail_count))
+                raise workers.Cancelled()
+            return res
         self.shell.run(work, "gdb2pg.import", inputs=[src],
                        params={"layers": len(layers), "db": self._db_label(), "mode": self._mode_label()},
                        on_done=self._imported, on_log=self._log)

@@ -275,3 +275,30 @@ def test_settings_dir_follows_the_platform_convention(monkeypatch, tmp_path):
     d = settings.settings_dir()
     expect = tmp_path / ("local" if sys.platform == "win32" else "xdg") / "GIS_BOX"
     assert os.path.normcase(d) == os.path.normcase(str(expect)) and os.path.isdir(d)
+
+
+# ---------------------------------------------------------------- CRS manager writes
+@pytest.mark.parametrize("ext", [".gpkg", ".shp", ".geojson"])
+def test_crs_manager_output_is_complete_or_absent_and_keeps_its_layer_name(tmp_path, monkeypatch, ext):
+    from tools import crs_manager as cm
+    src = str(tmp_path / "src.gpkg")
+    gpd.GeoDataFrame({"n": ["ქ"]}, geometry=[Point(500000, 4650000)], crs=32638).to_file(src, driver="GPKG")
+    out = tmp_path / ODD / ("result" + ext)
+    out.parent.mkdir()
+    cm.reproject_file(src, str(out), 32637)
+    back = gpd.read_file(str(out))
+    assert back.crs.to_epsg() == 32637 and back["n"][0] == "ქ"
+    if ext == ".gpkg":
+        assert list(gpd.list_layers(str(out))["name"]) == ["result"]          # not ".result.xxxx.part"
+    assert not leftover_staging(str(out.parent))
+    real = gpd.GeoDataFrame.to_file
+
+    def failing(self, path, *a, **k):
+        real(self, path, *a, **k)                       # the file is (partly) written ...
+        raise OSError("disk full")                      # ... then the write fails
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", failing)
+    out2 = tmp_path / ODD / ("second" + ext)
+    with pytest.raises(OSError):
+        cm.reproject_file(src, str(out2), 32637)
+    assert not [f for f in os.listdir(out.parent) if f.startswith("second")]
+    assert not leftover_staging(str(out.parent))

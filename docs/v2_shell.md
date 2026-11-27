@@ -62,8 +62,14 @@ PySide creates a fresh Python thread state for every `QRunnable.run`. pyproj kee
 ## Cancellation and output safety
 - Workers stay plain Python threads; a cancel only sets an event that the task polls (`ctx.check_cancelled()` / `cancel()`); threads are never killed. Closing the window during a task cancels and waits for the worker (see `closeEvent`).
 - Checkpoints: per file and per layer (DWG/DXF converter, geometry collector), per zone and again after the buffer is computed (line buffer), after the computation (zone intersection), per search chunk and before writing (parcel search), per file (Shp -> coordinates batch), per layer (GDB -> PostGIS), per row batch (database transfer).
-- `tools/safe_output.py`: outputs are written under a hidden `.<name>.part*` name in the target folder and renamed only when complete (`staged_file` for GPKG / GDB / folders, `staged_shapefile` moves all sidecars, `.shp` last). A cancel or error deletes the staged files, so no partial GPKG / SHP / GDB is ever left at the final path. `tools.xlsx_format.save_workbook` saves through a temporary file and `os.replace` the same way.
+- `tools/safe_output.py`: outputs are written under a hidden `.<name>.part*` name in the target folder and renamed only when complete (`staged_file` for GPKG / GDB / folders, `staged_shapefile` moves all sidecars, `.shp` last). A cancel or error deletes the staged files, so no partial GPKG / SHP / GDB is ever left at the final path. `tools.xlsx_format.save_workbook` saves through a temporary file and `os.replace` the same way. The CRS Manager (`crs_manager._write`: reproject / assign -> new file) is staged the same way.
+- Database transfer (`.mdb`): every write is ONE transaction with verification before the commit; a cancel or error rolls it back. New databases (records without a date / transferred records / all years) are deleted again on cancel or error - the connection that sets their CRS is always closed first (`_set_new_db_crs`), otherwise Windows cannot delete the locked half-made file.
+- GDB -> PostGIS: a cancel stops before the next layer; finished layers stay imported. `RunResult.cancelled` is set and V2 reports the run as *cancelled* with "n of m layers processed" (before: "Done").
 - Not interruptible inside one step: one GDAL write call, one LibreDWG conversion and one `ogr2ogr` layer import (GDB -> PostGIS) run to their end; the cancel takes effect at the next checkpoint. `ogr2ogr` is deliberately not killed, because a killed import commits a partial table.
+
+## Small windows and fonts
+- Tool pages sit in a scroll area (`pageScroll`) that scrolls only when the window is smaller than the page needs; at the 900x600 minimum, 7 of 14 pages were squeezed before.
+- Decorative emoji in button labels (shared strings such as "🗑 Delete") are dropped when no emoji font is installed (`v2.i18n.plain`, common on Linux), instead of being drawn as boxes. ★ ⚠ ✓ ◷ are ordinary glyphs and stay.
 
 ## Known limitations
 - Qt must be imported **before** geopandas/shapely on Windows (the other order crashes with an access violation). `gis_box_v2.py` and `conftest.py` already do this - keep it in new entry points.

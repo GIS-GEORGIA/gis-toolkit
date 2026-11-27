@@ -12,14 +12,30 @@ import os
 import sys
 
 
+def _qt_import_problem(e):
+    """Explain why PySide6 could not be imported. A missing package and a missing *system library* (Linux:
+    libEGL, libxkbcommon, xcb …) look alike to Python, but need different fixes."""
+    if isinstance(e, ModuleNotFoundError) and (e.name or "").split(".")[0] == "PySide6":
+        return "PySide6 is not installed.  pip install PySide6   (see requirements-optional.txt)"
+    msg = "PySide6 (Qt) could not be loaded: {}".format(e)
+    if sys.platform.startswith("linux"):
+        if "GLIBC_" in str(e):            # a build made on a newer distribution than this one
+            msg += ("\nThis GIS_BOX build needs a newer Linux (C library) than this system has. Use a build made "
+                    "on this or an older distribution, or run from source (see docs/INSTALL.md).")
+        else:
+            msg += ("\nA Qt system library is missing. Debian/Ubuntu: sudo apt install libegl1 libgl1 libxkbcommon0 "
+                    "libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 libxcb-cursor0   (see docs/INSTALL.md)")
+    return msg
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--selftest" in argv:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     try:
         from PySide6.QtWidgets import QApplication
-    except ImportError:
-        print("PySide6 is not installed.  pip install PySide6   (see requirements-optional.txt)", file=sys.stderr)
+    except ImportError as e:
+        print(_qt_import_problem(e), file=sys.stderr)
         return 2
     from v2.main_window import MainWindow, install_excepthook
     from v2.settings import Settings
@@ -55,6 +71,12 @@ def _selftest_all(app, win):
     assets = themes.register_assets()
     lines.append("theme assets (SVG chevrons / ticks): " + ("OK" if assets else "MISSING"))
     ok &= assets
+    bundle = getattr(sys, "_MEIPASS", None)                   # frozen build: assets must come from the bundle,
+    inside = bundle is None or os.path.normcase(str(themes.ASSET_DIR)).startswith(os.path.normcase(bundle))
+    lines.append("asset folder: {} ({})".format(themes.ASSET_DIR, "bundled" if bundle else "source"))
+    if not inside:                                            # never from a developer checkout
+        lines.append("asset folder FAILED: outside the packaged application")
+    ok &= inside
     for theme in ("dark", "light"):
         win.apply_theme(theme)
         for t in registry.TOOLS:

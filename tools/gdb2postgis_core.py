@@ -394,6 +394,7 @@ class RunResult:
     started: str
     finished: str = ""
     results: list[LayerResult] = field(default_factory=list)
+    cancelled: bool = False          # stopped by should_cancel() before all layers ran (finished layers are kept)
 
     @property
     def ok_count(self) -> int:
@@ -592,6 +593,7 @@ def run_import(
     for i, layer in enumerate(layers, 1):
         if should_cancel and should_cancel():
             log("WARN", "Cancelled by user.")
+            run.cancelled = True
             break
         tag = f"[{i}/{len(layers)}] {layer}"
         t0 = datetime.now()
