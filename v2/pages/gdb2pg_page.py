@@ -79,7 +79,7 @@ class Gdb2PgPage(QWidget):
         if self.dir_edit.text():
             self._scan_sources()
         if self.sched_box.isChecked():              # schedule from a previous session (already confirmed then)
-            QTimer.singleShot(0, lambda: self.apply_schedule(confirm=False))
+            QTimer.singleShot(0, self, lambda: self.apply_schedule(confirm=False))
 
     def _z(self, key, **f):
         from tools.i18n import translate
@@ -358,7 +358,7 @@ class Gdb2PgPage(QWidget):
         if not src or not ogrinfo:
             return
         if self.shell.task is not None:
-            QTimer.singleShot(200, self.load_layers)
+            QTimer.singleShot(200, self, self.load_layers)
             return
         self._log("— " + self._z("loading_layers"))
         self.shell.run(lambda ctx: core.list_layers(ogrinfo, src), "gdb2pg.layers", inputs=[src],
@@ -530,15 +530,16 @@ class Gdb2PgPage(QWidget):
                 text = (self._z("import_confirm", n=len(layers), db=self._db_label(), mode=self._mode_label())
                         + "\n" + self._z("no_overwrite_needed"))
             if self._ask(text):
-                QTimer.singleShot(0, lambda: self._when_free(
+                QTimer.singleShot(0, self, lambda: self._when_free(
                     lambda: self._run_import(ogr2ogr, ogrinfo, src, layers, pg, opt)))
         self.shell.run(check, "gdb2pg.check", params={"db": self._db_label(), "layers": len(layers)},
                        on_done=checked)
         return True
 
     def _when_free(self, fn):
+        # Every QTimer.singleShot in this page passes `self` as context: Qt drops the call if the page is deleted first.
         if self.shell.task is not None:
-            QTimer.singleShot(50, lambda: self._when_free(fn))
+            QTimer.singleShot(50, self, lambda: self._when_free(fn))
         else:
             fn()
 

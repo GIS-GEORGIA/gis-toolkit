@@ -262,3 +262,32 @@ def test_real_ogrinfo_lists_layers_of_a_generated_gdb(qapp, tmp_path, monkeypatc
     assert sorted(p._layer_names) == ["pipes", "wells"]
     w.task = None
     w.close()
+
+
+@needs_qt
+def test_deferred_calls_are_dropped_when_the_page_is_deleted(env, monkeypatch):
+    """A saved schedule re-applies itself one event-loop turn after the page is built, and the busy paths retry
+    later (layer list, "when free"). If the page is deleted first, those calls must be dropped - not run on a
+    deleted widget ("Internal C++ object (QTimer) already deleted") or, worse, re-register the Windows task."""
+    import sys
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication
+    from v2.pages.gdb2pg_page import Gdb2PgPage
+    w, _c, sched, settings, src = env
+    cli.save_cfg({"sched_on": True, "sched_bg": True, "layers": ["roads"]}, settings)
+    errors, ran = [], []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: errors.append(exc[1]))
+    p = Gdb2PgPage(w, settings_path=settings)             # queues apply_schedule(confirm=False)
+    assert p.sched_box.isChecked() and w.task is None
+    p._sources = {"city.gdb": os.path.join(src, "city.gdb")}
+    p.source_combo.addItem("city.gdb")
+    w.task = object()                                      # busy: both calls below are retried later
+    p.load_layers()
+    p._when_free(lambda: ran.append("when_free"))
+    shiboken6.delete(p)                                    # gone before the event loop ever runs
+    w.task = None
+    t0 = time.time()
+    while time.time() - t0 < 0.6:                          # past every delay (0 / 50 / 200 ms)
+        QCoreApplication.processEvents()
+        time.sleep(0.01)
+    assert errors == [] and ran == [] and sched == []
