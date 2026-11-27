@@ -39,6 +39,29 @@ S = {
     "diag_saved": {"ka": "ანგარიში შენახულია:", "en": "Report saved:"},
     "diag_exists": {"ka": "ფაილი უკვე არსებობს — აირჩიე სხვა სახელი.", "en": "File already exists - choose another name."},
     "about_text": {"ka": "GIS_BOX — GIS ხელსაწყოების ნაკრები საქართველოსთვის.", "en": "GIS_BOX - a GIS toolkit."},
+    # --- shell: home, cards, states, errors
+    "all_tools": {"ka": "ყველა ხელსაწყო", "en": "All tools"},
+    "tools_n": {"ka": "{n} ხელსაწყო", "en": "{n} tools"},
+    "no_results": {"ka": "ვერაფერი მოიძებნა: „{q}“", "en": "Nothing found for “{q}”"},
+    "open_file_hint": {"ka": "ორჯერ დააწკაპუნე — გაიხსნება CRS მენეჯერში",
+                       "en": "Double-click to open it in the CRS Manager"},
+    "busy_refused": {"ka": "ჯერ მიმდინარე ოპერაცია უნდა დასრულდეს (ან გააუქმე).",
+                     "en": "Another operation is still running - wait for it or cancel it."},
+    "cancelling": {"ka": "უქმდება…", "en": "Cancelling…"},
+    "page_failed": {"ka": "ხელსაწყოს გახსნა ვერ მოხერხდა", "en": "This tool could not be opened"},
+    "page_failed_hint": {"ka": "სავარაუდოდ აკლია არასავალდებულო პაკეტი ან კომპონენტი. დეტალები ჩაწერილია ლოგში "
+                                "(სერვისი → ლოგების საქაღალდის გახსნა); შეამოწმე გარემოც (სერვისი → გარემოს შემოწმება).",
+                         "en": "Most likely an optional package or component is missing. The details are in the log "
+                               "(Service → Open logs folder); also try Service → Environment check."},
+    "retry": {"ka": "თავიდან ცდა", "en": "Try again"},
+    "ui_error": {"ka": "შიდა შეცდომა (დეტალები ლოგშია):", "en": "Internal error (details in the log):"},
+    "close_running_title": {"ka": "ოპერაცია მიმდინარეობს", "en": "An operation is running"},
+    "close_running": {"ka": "„{tool}“ ჯერ არ დასრულებულა.\n\nგავაუქმო და დავხურო პროგრამა? ფანჯარა დაიხურება, "
+                            "როგორც კი ოპერაცია უსაფრთხოდ შეჩერდება.",
+                      "en": "“{tool}” has not finished yet.\n\nCancel it and close the program? The window closes "
+                            "once the operation has stopped safely."},
+    "closing_wait": {"ka": "ოპერაცია ჩერდება, შემდეგ პროგრამა დაიხურება…",
+                     "en": "Stopping the operation, then the program will close…"},
     # --- CRS page
     "crs_file": {"ka": "ფაილი", "en": "File"},
     "browse": {"ka": "არჩევა…", "en": "Browse…"},

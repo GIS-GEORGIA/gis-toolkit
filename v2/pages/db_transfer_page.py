@@ -347,11 +347,11 @@ class DbTransferPage(QWidget):
 
         def go():
             if self.shell.task is not None:
-                QTimer.singleShot(30, go)
+                QTimer.singleShot(30, self, go)             # context `self`: dropped if the page is deleted
                 return
             self._chain -= 1
             fn()
-        QTimer.singleShot(0, go)
+        QTimer.singleShot(0, self, go)
 
     # ------------------------------------------------------------------ validation / check
     def _validate(self):

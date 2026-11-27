@@ -17,7 +17,7 @@ def main(argv=None):
     except ImportError:
         print("PySide6 is not installed.  pip install PySide6   (see requirements-optional.txt)", file=sys.stderr)
         return 2
-    from v2.main_window import MainWindow
+    from v2.main_window import MainWindow, install_excepthook
     from v2.settings import Settings
 
     from tools import update_manager
@@ -28,6 +28,7 @@ def main(argv=None):
     if "--selftest" in argv:
         print("OK GIS_BOX V2 window built:", win.windowTitle())
         return 0
+    install_excepthook(win)                            # log + show unexpected errors instead of a silent console
     win.show()
     return app.exec()
 

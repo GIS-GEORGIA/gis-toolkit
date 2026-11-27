@@ -7,9 +7,11 @@ python gis_box_v2.py --selftest  # build the window offscreen, print OK (CI / di
 Needs `PySide6` (`requirements-optional.txt`). The PyInstaller build contains it too: `GIS_BOX.exe --v2`. The classic app `gis_box.py` / `GIS_BOX.exe` is untouched and keeps working.
 
 ## What the window has
-- **Sidebar:** search (names + descriptions, Georgian and English), **favorites**, **recently used**, tool **categories**, tool descriptions as tooltips.
-- **Tool pages:** header with favorite toggle, description, then the tool itself.
-- **Status bar:** progress bar + **Cancel** for background tasks; **toast notifications** for success/errors.
+- **Sidebar** (resizable, width remembered): search (names + descriptions, Georgian and English; `Ctrl+F` focuses it, Enter opens the first hit), **favorites**, **recently used**, tool **categories**, a colour badge per tool (category colour + short code, drawn in code - no image files, sharp at any display scaling), descriptions as tooltips; the open tool is highlighted.
+- **Home:** recently used tools as chips, then every tool as a card grouped by category (responsive grid that wraps with the window width, favorite star), recently opened files.
+- **Tool pages:** header with badge, category, title and favorite toggle, description, then the tool itself. A page that fails to build (e.g. a missing optional package) shows the error with **Try again / Open logs / Environment check** instead of breaking the window; the traceback goes to the log.
+- **Status bar:** progress bar with the task's progress text + **Cancel** (shows "Cancelling…" until the worker stops); **toast notifications** for success/errors (wrapped to the window width, errors stay 8 s).
+- **Safety:** starting a second task while one runs says so (instead of doing nothing); an exception in a page's result callback is logged and shown and never leaves the shell "busy"; unexpected exceptions (`sys.excepthook`) are logged and shown as an error toast; closing the window while a task runs asks first, cancels it and closes only after the worker has stopped (at most 15 s) - worker threads are daemons, so quitting immediately could cut a file in half.
 - **View menu:** light/dark theme, Georgian/English (applied immediately, remembered).
 - **Service menu:** open logs folder, export diagnostic report (redacted zip), environment check.
 - Settings: `v2_settings.json` in the per-user config folder (`%LOCALAPPDATA%\GIS_BOX`, `~/.config/GIS_BOX`; override `GIS_BOX_V2_DIR`) - atomic writes, corrupt/invalid values fall back to defaults.
@@ -21,7 +23,8 @@ Needs `PySide6` (`requirements-optional.txt`). The PyInstaller build contains it
 | `v2/settings.py` | settings, favorites, recents (no Qt) |
 | `v2/workers.py` | `run_task()`: GIS function in a plain Python thread (NOT `QThreadPool`, see below), progress/cancel, callbacks delivered in the GUI thread, every task recorded in the operation history |
 | `v2/main_window.py` | window, sidebar, pages, notifications |
-| `v2/themes.py`, `v2/i18n.py` | theme palettes + stylesheet, UI strings |
+| `v2/themes.py`, `v2/i18n.py` | theme palettes -> stylesheet + matching QPalette (`themes.apply`), UI strings |
+| `v2/widgets.py` | `FlowLayout` (wrapping grid), `badge_icon`, `ToolCard` |
 | `v2/pages/*.py` | native tool pages (first one: CRS Manager) |
 | `v2/launcher.py` | opens a not-yet-ported tkinter tool in the classic window (`gis_box.py --tool KEY`, separate process, no shell) |
 
@@ -50,6 +53,10 @@ To port a tool: add a page class in `v2/pages/`, set `kind="native"` and `page="
 
 ## Why not QThreadPool
 PySide creates a fresh Python thread state for every `QRunnable.run`. pyproj keeps its PROJ context in thread-local storage, so a `detect` task followed by a `reproject` task crashed the process (access violation on Windows, segmentation fault on Linux) with pyproj 3.7 / geopandas 1.2 - found by CI, reproduced locally, gone with a plain `threading.Thread`. Results still reach the GUI thread through queued Qt signals. Do not move GIS work back to `QThreadPool` without re-running `tests/test_v2_shell.py` against the newest geopandas/pyproj.
+
+## Themes and performance
+- The stylesheet styles widget types and object names (`#primary`, `#danger`, `#ghost`, `#card`, `#chip`, `#caps`, `#muted`, `#error` …) with hover / focus / pressed / checked / disabled states; containers are transparent so group boxes and cards keep their own surface colour.
+- `themes.apply` skips re-applying the active theme: each `setPalette` / `setStyleSheet` re-polishes every live widget. Measured (offscreen, Windows, Python 3.11): building a window 0.13 s -> 0.03 s; switching theme with all 14 pages open 0.5 s -> 0.12 s (stylesheet cleared first, then palette + stylesheet). Startup imports no GIS package; pages are built on first use.
 
 ## Known limitations
 - Qt must be imported **before** geopandas/shapely on Windows (the other order crashes with an access violation). `gis_box_v2.py` and `conftest.py` already do this - keep it in new entry points.
