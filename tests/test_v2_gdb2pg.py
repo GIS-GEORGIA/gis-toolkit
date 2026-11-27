@@ -157,7 +157,11 @@ def test_append_asks_once_and_incremental_lists_only_first_loads(env):
 
 
 @needs_qt
-def test_schedule_asks_registers_and_removes_the_windows_task(env):
+def test_schedule_asks_registers_and_removes_the_windows_task(env, monkeypatch):
+    import types
+    from v2.pages import gdb2pg_page
+    # the Windows-task branch is chosen by sys.platform; register/unregister are fakes, so run it on Linux CI too
+    monkeypatch.setattr(gdb2pg_page, "sys", types.SimpleNamespace(platform="win32"))
     w, _c, sched, settings, src = env
     p = _page(w, src, answers=[False, True])
     p.layers_list.selectAll()

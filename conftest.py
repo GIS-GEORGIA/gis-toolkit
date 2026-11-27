@@ -26,6 +26,23 @@ def _isolated_log_dir(tmp_path_factory, monkeypatch):
     lm.set_manager(None)
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """Clear the clipboard before the interpreter shuts down.
+
+    With the Qt `offscreen` platform (tests / CI) a clipboard that still holds data set by a test
+    (QMimeData / an image) crashes the process during shutdown - access violation on Windows,
+    segmentation fault on Linux - AFTER all tests passed, so CI reported a failure. The real
+    window platforms are not affected (checked: same script exits cleanly on `windows`)."""
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is not None:
+        app.clipboard().clear()
+        app.processEvents()
+
+
 @pytest.fixture(autouse=True)
 def _isolated_v2_dir(tmp_path_factory, monkeypatch):
     """V2 settings/updates/backups must never touch the real per-user folder in tests."""
