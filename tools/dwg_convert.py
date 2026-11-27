@@ -169,6 +169,12 @@ DWT = {
     "tip_crs":  {"en": "Reproject the output, or keep each file's own CRS.",
                  "ka": "გამომავალის რეპროექცია, ან თითო ფაილის საკუთარი "
                        "CRS-ის შენარჩუნება."},
+    "assume": {"ka": "CRS-ის გარეშე ნახაზებს მიენიჭოს არჩეული CRS (კოორდინატები არ გადაიყვანება)",
+               "en": "Label drawings without a CRS with the selected CRS (coordinates are not transformed)"},
+    "assume_tip": {"ka": "DXF/DWG-ს ჩვეულებრივ CRS არ აქვს. ჩართე მხოლოდ მაშინ, თუ იცი, რომ ნახაზი არჩეულ სისტემაშია "
+                         "(მაგ. UTM 38N). გამორთულზე ასეთი ფაილი CRS-ის გარეშე ჩაიწერება — არაფერი იკარგება.",
+                   "en": "DXF/DWG usually have no CRS. Enable only if you know the drawing is in the selected system "
+                         "(e.g. UTM 38N). When off, such a file is written without a CRS - nothing is lost."},
     "tip_count": {"en": "Count matching files without converting them.",
                   "ka": "შესაბამისი ფაილების დათვლა კონვერტაციის გარეშე."},
     "tip_run":  {"en": "Convert now (with confirmation).",
@@ -259,9 +265,18 @@ class DwgConvertTool(ToolFrame):
                           [(self.tr("crs_native"), None)] + CRS_CHOICES[1:]
                           if e == saved_epsg), self.tr("crs_native"))
         self.crs_var = tk.StringVar(value=cur_label)
-        add_tip(ttk.Combobox(crow, textvariable=self.crs_var, state="readonly",
-                             width=28, values=self._crs_labels),
-                self.tr("tip_crs")).pack(side="left", padx=(6, 0))
+        crs_combo = ttk.Combobox(crow, textvariable=self.crs_var, state="readonly",
+                                 width=28, values=self._crs_labels)
+        add_tip(crs_combo, self.tr("tip_crs")).pack(side="left", padx=(6, 0))
+        # CRS-ის გარეშე ნახაზი: არჩეული CRS მხოლოდ მომხმარებლის თანხმობით (ნაგულისხმევად გამორთული)
+        arow = ttk.Frame(self)
+        arow.pack(fill="x", pady=(0, 4))
+        self.assume_var = tk.BooleanVar(value=bool(st.get("assume_missing_crs",
+                                                          saved.get("assume_missing_crs", False))))
+        self.assume_cb = ttk.Checkbutton(arow, text=self.tr("assume"), variable=self.assume_var)
+        add_tip(self.assume_cb, self.tr("assume_tip")).pack(side="left")
+        crs_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_assume())
+        self._sync_assume()
 
         # --- ღილაკები ---
         opt = ttk.Frame(self)
@@ -288,6 +303,11 @@ class DwgConvertTool(ToolFrame):
 
         self.after(100, self._poll_queue)
 
+    def _sync_assume(self):
+        """მხოლოდ არჩეული CRS-ისას აქვს აზრი (წყაროსეულისას მისანიჭებელი არაფერია)."""
+        on = self._crs_by_label.get(self.crs_var.get()) is not None
+        self.assume_cb.state(["!disabled"] if on else ["disabled"])
+
     def save_state(self):
         st = self._state()
         st["source"] = self.src_var.get()
@@ -295,6 +315,7 @@ class DwgConvertTool(ToolFrame):
         st["out"] = self.out_var.get()
         st["format"] = self.fmt_var.get()
         st["crs_epsg"] = self._crs_by_label.get(self.crs_var.get())
+        st["assume_missing_crs"] = bool(self.assume_var.get())
 
     # ---- არჩევა ----
     def _pick_file(self):
@@ -373,8 +394,9 @@ class DwgConvertTool(ToolFrame):
                                    self.tr("confirm_m", n=len(files),
                                           fmt=fmt_label, out=out)):
             return
+        assume = bool(epsg) and bool(self.assume_var.get())
         self.app.set_tool_config(self.tid, {"source": source, "out": out,
-                                            "format": fmt})
+                                            "format": fmt, "assume_missing_crs": bool(self.assume_var.get())})
 
         self.busy = True
         self._cancel_event.clear()
@@ -384,16 +406,16 @@ class DwgConvertTool(ToolFrame):
         self.status.set(self.tr("start", n=len(files)))
         self.app.log("— " + self.tr("start", n=len(files)))
 
-        threading.Thread(target=self._worker, args=(files, out, fmt, epsg),
+        threading.Thread(target=self._worker, args=(files, out, fmt, epsg, assume),
                          daemon=True).start()
 
-    def _worker(self, files, out, fmt, epsg):
+    def _worker(self, files, out, fmt, epsg, assume=False):
         try:
             result = convert_batch(
                 files, out, fmt, target_epsg=epsg,
                 log=lambda m: self.msg_queue.put(("log", m)),
                 progress=lambda i, n: self.msg_queue.put(("progress", (i, n))),
-                cancel=self._cancel_event.is_set)
+                cancel=self._cancel_event.is_set, assume_missing_crs=assume)
             result["out"] = out
             self.msg_queue.put(("done", result))
         except ImportError as e:

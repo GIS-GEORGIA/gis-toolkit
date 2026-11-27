@@ -14,9 +14,6 @@
 """
 
 import os
-import re
-import sys
-import glob
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -28,30 +25,10 @@ from tools.translit import lat_to_geo
 from tools.clipboard_html import copy_table, copy_image
 from tools.xlsx_format import FileLockedError, save_workbook
 
-# ცნობილი სახელის ნიმუშები, რომლებსაც ავტომატურად ვირჩევთ
-AUTO_PATTERNS = ("gas_pipe_crossing", "gas_pipe_protzone_crossing", "crossing")
-
-# ნაგულისხმევი ტექსტური შაბლონები („ქუდები“)
-DEFAULT_TEMPLATES = [
-    "nakveTis da dacvis zonis sazRvris kveTis koordinatebi",
-    "ნაკვეთის და დაცვის ზონის საზღვრის კვეთის კოორდინატები",
-    "ნაკვეთის საზღვრის და დაცვის მეორე ზონის კვეთის კოორდინატები",
-]
-
-# გარე ტექსტური ფაილი — თითო ხაზზე ერთი ქუდი (UTF-8). მომხმარებელი Notepad-ში
-# ამატებს ქართულ ქუდებს (სადაც აკრეფა ნორმალურად მუშაობს) და აქ ჩნდება.
-from tools.apppaths import data_path
-TEMPLATES_FILE = data_path("shp_coords_templates.txt")
-
-# ---- განლაგების მუდმივები (მაგალითის მიხედვით) ----------------------------
-# ნედლი ბლოკი A:D. ასლი იწყება G-დან — 2 ცარიელი სვეტი (E, F) დაშორებით,
-# რომ დაკოპირებისას ორიგინალს არ დაედოს.
-COPY_COL = 7        # G
-TITLE_ROW = 6       # ტექსტური ქუდი (იწყება აქედან)
-TITLE_ROWS = 3      # ქუდი = 3 რიგის სიმაღლის merge & center ბლოკი
-HEADER_ROW_NO_TITLE = 6
-TITLE_FONT = "Sylfaen"   # ქუდის ფონტი დეფოლტად
-ANGLE_FMT = '0"°"'   # კუთხის სვეტის ფორმატი — მთელი რიცხვი + გრადუსი (წერტილის გარეშე)
+# ლოგიკა და მუდმივები — tools/shp_coords_core.py (საერთო V2-თან); სახელები აქაც რჩება თავსებადობისთვის
+from tools import shp_coords_core as core
+from tools.shp_coords_core import (AUTO_PATTERNS, DEFAULT_TEMPLATES, TEMPLATES_FILE, COPY_COL, TITLE_ROW,  # noqa: F401
+                                   TITLE_ROWS, HEADER_ROW_NO_TITLE, TITLE_FONT, ANGLE_FMT)
 
 
 RTR = {
@@ -213,40 +190,17 @@ class ShpCoordsTool(ToolFrame):
     # ---- შენახული ტექსტური შაბლონები ----
     @staticmethod
     def _file_templates():
-        """გარე ფაილიდან ქუდები. მედეგია კოდირებაზე: utf-8-sig (BOM) → utf-8 →
-        cp1251 → cp1252 (Notepad-ის ANSI-ს შემთხვევაშიც წაიკითხავს)."""
-        try:
-            data = open(TEMPLATES_FILE, "rb").read()
-        except OSError:
-            return []
-        text = None
-        for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252"):
-            try:
-                text = data.decode(enc)
-                break
-            except UnicodeDecodeError:
-                continue
-        if text is None:
-            return []
-        return [ln.strip() for ln in text.splitlines()
-                if ln.strip() and not ln.startswith("#")]
+        """გარე ფაილიდან ქუდები (კოდირებაზე მედეგი) — core.file_templates."""
+        return core.file_templates()
 
     def _templates(self):
-        """ნაგულისხმევი (ჩაშენებული) + გარე ფაილი — ერთადერთი წყაროები (დუბლ. გარეშე).
-        ერთადერთი რედაქტირებადი — ფაილი (add/delete და Notepad ერთსა და იმავეს ცვლის)."""
-        merged = list(DEFAULT_TEMPLATES)
-        for t in self._file_templates():
-            if t and t not in merged:
-                merged.append(t)
-        return merged
+        """ნაგულისხმევი + გარე ფაილი (დუბლ. გარეშე) — core.templates."""
+        return core.templates()
 
     def _write_file_templates(self, lines):
         """ფაილის გადაწერა (header + user ქუდები, UTF-8)."""
         try:
-            with open(TEMPLATES_FILE, "w", encoding="utf-8") as f:
-                f.write("# თითო ხაზზე ერთი ტექსტური ქუდი (UTF-8) / one header per line\n")
-                for ln in lines:
-                    f.write(ln + "\n")
+            core.write_file_templates(lines)
         except OSError as e:
             messagebox.showerror(self.tr("err"), str(e))
 
@@ -502,15 +456,7 @@ class ShpCoordsTool(ToolFrame):
         if not folder or not os.path.isdir(folder):
             messagebox.showwarning("GIS_BOX", self.tr("no_folder"))
             return
-        import pyogrio
-        self._shp_map = {}
-        for shp in sorted(glob.glob(os.path.join(folder, "*.shp"))):
-            try:
-                info = pyogrio.read_info(shp)
-            except Exception:
-                continue
-            if "Point" in str(info.get("geometry_type") or ""):
-                self._shp_map[os.path.basename(shp)] = shp
+        self._shp_map = core.scan_point_shapefiles(folder)
         names = list(self._shp_map)
         self.shp_combo["values"] = names
         if not names:
@@ -520,9 +466,7 @@ class ShpCoordsTool(ToolFrame):
             return
         self.app.log("— " + self.tr("found_shp", n=len(names)))
         # ავტომატური არჩევა: ცნობილი ნიმუშის მსგავსი, თუ არა — პირველი
-        auto = next((n for n in names
-                     if any(p in n.lower() for p in AUTO_PATTERNS)), None)
-        self.shp_var.set(auto or names[0])
+        self.shp_var.set(core.auto_pick(names))
         self._on_shp_selected()
 
     def load_external(self, path):
@@ -566,63 +510,20 @@ class ShpCoordsTool(ToolFrame):
     # ---- shapefile-ის კითხვა ----
     @staticmethod
     def _detect_zone(shp):
-        try:
-            import pyogrio, pyproj
-            crs = pyogrio.read_info(shp).get("crs")
-            if not crs:
-                return None
-            uz = pyproj.CRS.from_user_input(crs).utm_zone   # მაგ. '37N'
-            if uz:
-                m = re.match(r"(\d+)", uz)
-                if m:
-                    return int(m.group(1))
-        except Exception:
-            pass
-        return None
+        return core.detect_zone(shp)
 
     @staticmethod
     def _count_points(shp):
-        try:
-            import pyogrio
-            return int(pyogrio.read_info(shp).get("features") or 0)
-        except Exception:
-            return 0
+        return core.count_points(shp)
 
     @staticmethod
     def _crs_missing(shp):
         """True — თუ shapefile-ს კოორდინატთა სისტემა (.prj/CRS) არ აქვს."""
-        try:
-            import pyogrio
-            return not pyogrio.read_info(shp).get("crs")
-        except Exception:
-            return False
+        return core.crs_missing(shp)
 
     def _read_points(self, shp, zone):
-        """დააბრუნებს [(id, x, y), …] მითითებული ზონის კოორდინატებში."""
-        import geopandas as gpd
-        gdf = gpd.read_file(shp)
-        if gdf.crs is not None:
-            try:
-                gdf = gdf.to_crs(epsg=32600 + zone)
-            except Exception:
-                pass
-        idcol = next((c for c in gdf.columns if c.lower() == "id"), None)
-        pts = []
-        for _, row in gdf.iterrows():
-            geom = row.geometry
-            if geom is None or geom.is_empty:
-                continue
-            if geom.geom_type == "Point":
-                coords = [(geom.x, geom.y)]
-            elif geom.geom_type == "MultiPoint":
-                coords = [(p.x, p.y) for p in geom.geoms]
-            else:
-                c = geom.centroid
-                coords = [(c.x, c.y)]
-            idv = row[idcol] if idcol is not None else 0
-            for x, y in coords:
-                pts.append((idv, x, y))
-        return pts
+        """დააბრუნებს [(id, x, y), …] მითითებული ზონის კოორდინატებში — core.read_points."""
+        return core.read_points(shp, zone)
 
     def _resolve_zone(self, shp=None):
         """მოქმედი ზონა: ხელით არჩეული (37/38) ან ავტო — .prj-დან ცნობილი
@@ -742,29 +643,12 @@ class ShpCoordsTool(ToolFrame):
         template = self.tmpl_var.get()
         if template == self.tr("tmpl_none"):
             template = ""
-        angle_all = None
-        raw = self.angle_all_var.get().strip().replace(",", ".")
-        if self.angle_var.get() and raw:
-            try:
-                angle_all = float(raw)
-                if angle_all.is_integer():
-                    angle_all = int(angle_all)
-            except ValueError:
-                angle_all = None
+        angle_all = core.parse_angle(self.angle_all_var.get()) if self.angle_var.get() else None
         return template, self.angle_var.get(), angle_all, self.vtype_var.get()
 
     def _block_rows(self, points, vtype, angle_on, angle_all):
         """(headers, rows) — ზუსტად ის, რაც Excel-ის ასლში (° კუთხეზე)."""
-        headers = ["№", "X", "Y"] + ([self.tr("angle_hdr")] if angle_on else [])
-        rows = []
-        for i, (_idv, x, y) in enumerate(points, 1):
-            xv = int(round(x)) if vtype == "int" else float(x)
-            yv = int(round(y)) if vtype == "int" else float(y)
-            row = [i, xv, yv]
-            if angle_on:
-                row.append(f"{angle_all}°" if angle_all is not None else "")
-            rows.append(row)
-        return headers, rows
+        return core.block_rows(points, vtype, angle_on, angle_all, self.tr("angle_hdr"))
 
     def _copy_clipboard(self):
         """შექმნილი ბლოკის (ქუდი + ჩარჩოებიანი №/X/Y) კოპირება ბუფერში —
@@ -788,36 +672,7 @@ class ShpCoordsTool(ToolFrame):
 
         template, angle_on, angle_all, vtype = self._current_settings()
         headers, rows = self._block_rows(points, vtype, angle_on, angle_all)
-        ncols = len(headers)
-
-        def esc(v):
-            return (str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-
-        # უბრალო ცხრილი — ჩარჩოები + ცენტრირება, ფონის/ფერის გარეშე (როგორც არის)
-        bd = "border:1px solid #000;"
-        ce = "text-align:center;vertical-align:middle;padding:2px 10px;"
-        html = ['<table border="1" cellspacing="0" cellpadding="4" '
-                'style="border-collapse:collapse;'
-                'font-family:Sylfaen,Segoe UI,sans-serif;font-size:11pt;">']
-        if template:
-            html.append(f'<tr><td colspan="{ncols}" '
-                        f'style="{bd}{ce}font-weight:bold;">{esc(template)}</td></tr>')
-        html.append("<tr>" + "".join(
-            f'<td style="{bd}{ce}font-weight:bold;">{esc(h)}</td>' for h in headers) + "</tr>")
-        for row in rows:
-            html.append("<tr>" + "".join(
-                f'<td style="{bd}{ce}">{esc(c)}</td>' for c in row) + "</tr>")
-        html.append("</table>")
-        fragment = "".join(html)
-
-        # ტექსტი (TSV) — fallback
-        lines = []
-        if template:
-            lines.append(template)
-        lines.append("\t".join(str(h) for h in headers))
-        for row in rows:
-            lines.append("\t".join(str(c) for c in row))
-        text = "\r\n".join(lines)
+        fragment, text = core.clipboard_payload(template, headers, rows)
 
         if copy_table(fragment, text, widget=self):
             msg = self.tr("clip_done", n=len(rows))
@@ -918,8 +773,6 @@ class ShpCoordsTool(ToolFrame):
         """გახსნის Excel-ს, იპოვის „გადაკვეთის კუთხე“ სვეტს და ყველა მის
         (რიცხვით) უჯრას მიანიჭებს ° ფორმატს — ე.ი. მომხმარებელი ჯერ ჩაწერს
         რიცხვებს, მერე ერთი ღილაკით ყველას დაუმატებს გრადუსს."""
-        from openpyxl import load_workbook
-
         initial = getattr(self, "_last_xlsx", "") or ""
         path = filedialog.askopenfilename(
             title=self.tr("pick_xlsx"),
@@ -929,44 +782,7 @@ class ShpCoordsTool(ToolFrame):
         if not path:
             return
         try:
-            wb = load_workbook(path)
-        except Exception as e:
-            messagebox.showerror(self.tr("err"), str(e))
-            return
-
-        targets = {"გადაკვეთის კუთხე", "gadakvetis kutxe", "gadakveTis kuTxe"}
-        n = 0
-        for ws in wb.worksheets:
-            # ვიპოვოთ სათაურის უჯრა („…კუთხე“ / „…kuTxe“)
-            hdr = None
-            for row in ws.iter_rows():
-                for cell in row:
-                    v = cell.value
-                    if isinstance(v, str) and (v.strip() in targets
-                                               or "კუთხე" in v or "kutxe" in v.lower()):
-                        hdr = cell
-                        break
-                if hdr:
-                    break
-            if not hdr:
-                continue
-            for r in range(hdr.row + 1, ws.max_row + 1):
-                cell = ws.cell(row=r, column=hdr.column)
-                left = ws.cell(row=r, column=hdr.column - 1).value   # Y სვეტი
-                if cell.value is None and left is None:
-                    continue
-                # ტექსტად ჩაწერილი რიცხვი → რიცხვად
-                if isinstance(cell.value, str):
-                    s = cell.value.strip().replace("°", "").replace(",", ".")
-                    try:
-                        f = float(s)
-                        cell.value = int(f) if f.is_integer() else f
-                    except ValueError:
-                        pass
-                cell.number_format = ANGLE_FMT
-                n += 1
-        try:
-            save_workbook(wb, path)
+            n = core.apply_degree(path)
         except FileLockedError:
             messagebox.showerror(self.tr("err"), self.tr("file_locked"))
             return
@@ -983,72 +799,5 @@ class ShpCoordsTool(ToolFrame):
 
     def _write_workbook(self, path, sheet_name, points, value_type,
                         template, angle_on, angle_all):
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font
-        from openpyxl.utils import get_column_letter
-        from tools.xlsx_format import write_block, write_title
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = (sheet_name[:31] or "Coordinates")
-
-        bold = Font(bold=True)
-        hcenter = Alignment(horizontal="center")
-
-        # --- ნედლი ბლოკი A:D (FID, Id, POINT_X, POINT_Y) — ხელუხლებელი ---
-        for c, name in enumerate(["FID", "Id", "POINT_X", "POINT_Y"], 1):
-            cell = ws.cell(row=1, column=c, value=name)
-            cell.font = bold
-            cell.alignment = hcenter
-        for i, (idv, x, y) in enumerate(points):
-            ws.cell(row=2 + i, column=1, value=i)                       # FID
-            ws.cell(row=2 + i, column=2, value=(idv if idv is not None else 0))
-            ws.cell(row=2 + i, column=3, value=float(x))               # სრული სიზუსტე
-            ws.cell(row=2 + i, column=4, value=float(y))
-
-        # --- გასუფთავებული ასლი (გაზიარებული ფორმატირებით) ---
-        col = COPY_COL
-        ncols = 4 if angle_on else 3
-        # ასლის სვეტების სიგანე („გადაკვეთის კუთხე“ უფრო ფართო).
-        copy_widths = [max(4, len(str(len(points)))) + 2, 14, 14] + ([22] if angle_on else [])
-
-        if template:
-            end_row = write_title(ws, template, TITLE_ROW, col, ncols,
-                                  rows=TITLE_ROWS, font_name=TITLE_FONT,
-                                  total_width_chars=sum(copy_widths))
-            header_row = end_row + 1                  # 8 + 1 = 9
-        else:
-            header_row = HEADER_ROW_NO_TITLE
-
-        headers = ["№", "X", "Y"] + ([self.tr("angle_hdr")] if angle_on else [])
-        rows = []
-        for i, (idv, x, y) in enumerate(points, 1):
-            xv = int(round(x)) if value_type == "int" else float(x)
-            yv = int(round(y)) if value_type == "int" else float(y)
-            rows.append([i, xv, yv] + ([angle_all] if angle_on else []))
-
-        write_block(ws, header_row, col, headers, rows,
-                    angle_index=(3 if angle_on else None),
-                    angle_fmt=ANGLE_FMT, col_widths=copy_widths)
-
-        # --- ფართების ბლოკი (დაცვის ზონის კვეთიდან) — კოორდინატების ბლოკის
-        # გვერდით (მარჯვნივ), იმავე საწყის რიგზე, 2 ცარიელი სვეტის დაშორებით ---
-        if self._pending_areas:
-            from tools.xlsx_format import write_areas_block
-            a = self._pending_areas
-            metrics = [
-                ("ნაკვეთის ფართი", "Parcel area", a.get("parcel_area", 0.0)),
-                ("მოჭრილი ფართი (ნაკვეთი ∩ ზონა)",
-                 "Cut-out area (parcel ∩ zone)", a.get("cut_area", 0.0)),
-                ("დარჩენილი ფართი", "Remaining area",
-                 a.get("remainder_area", 0.0)),
-            ]
-            areas_col = col + ncols + 2
-            write_areas_block(ws, TITLE_ROW, areas_col, metrics)
-
-        # A:D სვეტების სიგანე
-        for c in range(1, 5):
-            ws.column_dimensions[get_column_letter(c)].width = 14
-
-        ws.freeze_panes = "A2"
-        save_workbook(wb, path)
+        core.write_workbook(path, sheet_name, points, value_type, template, angle_on, angle_all,
+                            angle_hdr=self.tr("angle_hdr"), areas=self._pending_areas)

@@ -28,6 +28,23 @@ hiddenimports += ["win32com", "win32com.client", "pythoncom", "pywintypes"]
 # ბაზებს შორის მონაცემთა გადატანა (.mdb) — pyodbc (C-გაფართოება) + სისტემური Access ODBC დრაივერი
 hiddenimports += ["pyodbc"]
 
+# V2 ინტერფეისი (PySide6): `GIS_BOX.exe --v2`. v2/ გვერდები importlib-ით იტვირთება → ცხადად ჩავრთოთ.
+# PySide6 არასავალდებულოა — თუ დაყენებული არაა, ბილდი მაინც შედგება (კლასიკური ინტერფეისით).
+import importlib.util
+hiddenimports += collect_submodules("v2") + ["gis_box_v2"]
+if importlib.util.find_spec("PySide6") is not None:
+    hiddenimports += ["PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+    # PyInstaller supports ONE Qt binding per build - exclude any others present in the environment
+    _qt_excludes = [
+        "PyQt5", "PyQt6", "PySide2",
+        "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
+        "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.Qt3DCore",
+        "PySide6.QtMultimedia", "PySide6.QtPdf", "PySide6.QtDesigner", "PySide6.QtCharts",
+        "PySide6.QtDataVisualization", "PySide6.QtBluetooth", "PySide6.QtSql", "PySide6.QtTest",
+    ]
+else:
+    _qt_excludes = []
+
 # მძიმე პაკეტები — სრული შეგროვება (data ფაილები: GDAL, proj.db, OCR მოდელები…)
 for pkg in ["pyogrio", "pyproj", "shapely", "geopandas", "fiona", "rasterio",
             "openpyxl", "pandas", "cv2", "pymupdf", "fitz",
@@ -54,7 +71,7 @@ a = Analysis(
         "tkinter.test", "pytest",
         "torch", "torchvision", "torchaudio",
         "tensorflow", "matplotlib", "IPython", "jupyter", "notebook",
-    ],
+    ] + _qt_excludes,
     noarchive=False,
 )
 

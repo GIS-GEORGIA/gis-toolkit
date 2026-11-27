@@ -608,6 +608,13 @@ class CoordExtractorApp:
         if not path:
             return
         try:
+            n_busy = export.format_target_filled(path)
+        except Exception as e:
+            messagebox.showerror(self.tr("format_failed"), str(e))
+            return
+        if n_busy and not messagebox.askyesno("GIS_BOX", self.tr("format_busy", n=n_busy)):
+            return
+        try:
             _saved, n = export.format_xlsx(path)
         except FileLockedError:
             messagebox.showerror(self.tr("format_failed"), self.tr("file_locked"))
@@ -665,7 +672,8 @@ class _XYDialog:
 def _fmt(v: float) -> str:
     if v is None:
         return ""
-    if float(v).is_integer():
+    v = round(float(v), 3)                 # 500020.0000001 from the affine fit -> "500020"
+    if v.is_integer():
         return str(int(v))
     return f"{v:.3f}"
 

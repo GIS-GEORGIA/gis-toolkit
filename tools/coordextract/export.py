@@ -12,6 +12,39 @@ from tools.xlsx_format import clean_number, write_block, save_workbook
 
 _clean_number = clean_number   # backward-compat alias
 
+# ასლის საწყისი პოზიცია: ორიგინალის ბოლო სვეტიდან (C) +2 → E, რამდენიმე რიგით ქვემოთ
+ORIG_COLS = 3
+FORMAT_START_COL = ORIG_COLS + 2              # 5 (E)
+FORMAT_START_ROW = 6
+
+
+def _read_block(ws):
+    """ორიგინალის წაკითხვა: A1 სათაური, მონაცემები მე-2 რიგიდან (No/X/Y), პირველ ცარიელ X/Y-მდე."""
+    data = []
+    r = 2
+    while True:
+        x = ws.cell(row=r, column=2).value
+        y = ws.cell(row=r, column=3).value
+        if x is None and y is None:
+            break
+        data.append((x, y))
+        r += 1
+    return data
+
+
+def format_target_filled(path: str) -> int:
+    """How many cells of the area that format_xlsx would write (header + rows, 3 columns) are already non-empty.
+    Read-only; lets the caller ask before anything is overwritten."""
+    from openpyxl import load_workbook
+
+    ws = load_workbook(path).active
+    n_rows = len(_read_block(ws)) + 1
+    filled = 0
+    for row in ws.iter_rows(min_row=FORMAT_START_ROW, max_row=FORMAT_START_ROW + n_rows - 1,
+                            min_col=FORMAT_START_COL, max_col=FORMAT_START_COL + 2, values_only=True):
+        filled += sum(1 for v in row if v not in (None, ""))
+    return filled
+
 
 def format_xlsx(path: str, out_path: str | None = None,
                 header: Sequence[str] = ("№", "X", "Y")) -> Tuple[str, int]:
@@ -30,22 +63,8 @@ def format_xlsx(path: str, out_path: str | None = None,
 
     wb = load_workbook(path)
     ws = wb.active
-
-    # --- ორიგინალის წაკითხვა: A1 სათაური, მონაცემები მე-2 რიგიდან (No/X/Y) ---
-    ORIG_COLS = 3
-    data = []
-    r = 2
-    while True:
-        x = ws.cell(row=r, column=2).value
-        y = ws.cell(row=r, column=3).value
-        if x is None and y is None:          # კოორდინატები აღარ არის — ბოლო
-            break
-        data.append((x, y))
-        r += 1
-
-    # --- ასლის საწყისი პოზიცია: ბოლო სვეტიდან +2 (C→E), რამდენიმე რიგით ქვემოთ ---
-    start_col = ORIG_COLS + 2                 # 3 + 2 = 5 (E)
-    start_row = 6
+    data = _read_block(ws)
+    start_row, start_col = FORMAT_START_ROW, FORMAT_START_COL
 
     rows = [(i, clean_number(x), clean_number(y))
             for i, (x, y) in enumerate(data, start=1)]

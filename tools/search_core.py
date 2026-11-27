@@ -62,6 +62,31 @@ def parse_manual_codes(text):
     return result
 
 
+def free_out_base(out_path, formats=("shp", "gpkg")):
+    """Base path (without extension) whose ``.shp`` / ``.gpkg`` (as requested) and ``_NOT_FOUND.txt`` are all
+    free: ``found_parcels`` → ``found_parcels_2`` … — an earlier result is never overwritten."""
+    base = os.path.splitext(out_path)[0]
+    exts = [".{}".format(f) for f in formats] + ["_NOT_FOUND.txt"]
+
+    def taken(b):
+        return any(os.path.exists(b + e) for e in exts)
+    cand, n = base, 1
+    while taken(cand):
+        n += 1
+        cand = "{}_{}".format(base, n)
+    return cand
+
+
+def write_not_found(out_path, not_found):
+    """``<out>_NOT_FOUND.txt`` next to the result (the base is free, see free_out_base). Returns the path."""
+    side = os.path.splitext(out_path)[0] + "_NOT_FOUND.txt"
+    if os.path.exists(side):
+        return None
+    with open(side, "w", encoding="utf-8") as f:
+        f.write("\n".join(not_found))
+    return side
+
+
 def run_search(gdb, layer, field, codes, out_path, log, done, tr,
                formats=("shp", "gpkg"), progress=None, cancel=None):
     """
@@ -132,8 +157,8 @@ def run_search(gdb, layer, field, codes, out_path, log, done, tr,
             matched = len(result)
 
             if formats:
-                base = os.path.splitext(out_path)[0]
-                os.makedirs(os.path.dirname(base), exist_ok=True)
+                base = free_out_base(out_path, formats)      # existing results are kept
+                os.makedirs(os.path.dirname(os.path.abspath(base)), exist_ok=True)
                 log(tr("rs_writing", n=matched))
 
                 # GeoPackage — სრული ინფო, უჭრელი

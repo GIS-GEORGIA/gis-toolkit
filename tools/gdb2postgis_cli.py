@@ -37,6 +37,37 @@ def _load_cfg():
         return {}
 
 
+def load_cfg(path=None):
+    """The remembered GDB → PostGIS settings (shared by the classic tool, the V2 page and the scheduled run)."""
+    try:
+        with open(path or SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return (json.load(f).get("tool_config") or {}).get("gdb2postgis") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def save_cfg(data, path=None):
+    """Replace ONLY ``tool_config.gdb2postgis`` in the classic settings file (everything else is kept);
+    written to a temporary file and swapped in, so a crash never leaves a half-written settings file.
+    Note: a classic GIS_BOX window that is open at the same time saves its own copy when it closes."""
+    path = path or SETTINGS_FILE
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+        if not isinstance(settings, dict):
+            settings = {}
+    except FileNotFoundError:
+        settings = {}
+    except ValueError:
+        raise ValueError("settings file is not valid JSON - not overwritten: {}".format(path))
+    settings.setdefault("tool_config", {})["gdb2postgis"] = dict(data)
+    tmp = path + ".tmp"
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(settings, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
 def run_headless():
     """ერთი იმპორტი შენახული პარამეტრებით. აბრუნებს 0/1 (exit code)."""
     from tools import gdb2postgis_core as core

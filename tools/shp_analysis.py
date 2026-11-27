@@ -82,6 +82,59 @@ ATR = {
 }
 
 
+def report_lines(root, rows, top_n, lang):
+    """The ranking report as text lines (classic section and V2 page)."""
+    def t(key, **fmt):
+        return translate(ATR, key, lang, **fmt)
+
+    def detail(r):
+        if r["kind"] == core.POLYGON:
+            txt = t("d_poly", a=core.fmt_area(r["area_total"], lang), p=core.fmt_length(r["perimeter_total"], lang),
+                    m=core.fmt_area(r["area_max"], lang), n=r["count"])
+        elif r["kind"] == core.LINE:
+            txt = t("d_line", l=core.fmt_length(r["length_total"], lang),
+                    m=core.fmt_length(r["length_max"], lang), n=r["count"])
+        else:
+            txt = t("d_point", n=r["count"])
+        if r.get("converted"):
+            txt += " · " + t("converted", crs=r["crs_label"])
+        return txt
+
+    summary = core.summarize(rows)
+    ranks = core.rank_layers(rows, top_n)
+    shown = {
+        "poly_area": lambda r: core.fmt_area(r["area_total"], lang),
+        "poly_perimeter": lambda r: core.fmt_length(r["perimeter_total"], lang),
+        "poly_area_max": lambda r: core.fmt_area(r["area_max"], lang),
+        "poly_count": lambda r: str(r["count"]),
+        "line_length": lambda r: core.fmt_length(r["length_total"], lang),
+        "line_length_max": lambda r: core.fmt_length(r["length_max"], lang),
+        "line_count": lambda r: str(r["count"]),
+        "point_count": lambda r: str(r["count"]),
+    }
+    out = ["", "=" * 60, t("hdr", root=root),
+           t("counts", total=summary["total"], p=summary[core.POLYGON], l=summary[core.LINE],
+             pt=summary[core.POINT]), "=" * 60]
+    for key, _kind, _field in core.RANKINGS:
+        entries = ranks[key]
+        if not entries:
+            continue
+        out += ["", "▶ {} {}".format(t("rank_" + key), t("top_n", n=len(entries)))]
+        for i, r in enumerate(entries, start=1):
+            out += ["  {}. {} — {}".format(i, r["name"], shown[key](r)), "       " + detail(r),
+                    "       " + t("folder", f=r["folder"])]
+    for status, key in ((core.NO_CRS, "skip_nocrs"), (core.EMPTY, "skip_empty"), (core.ERROR, "skip_error")):
+        items = summary[status]
+        if not items:
+            continue
+        out += ["", "⚠ " + t(key, n=len(items))]
+        for r in items:
+            extra = " — " + r["error"] if status == core.ERROR and r["error"] else ""
+            out.append("    {}{}".format(r["path"], extra))
+    out.append("=" * 60)
+    return out
+
+
 class ShpAnalysisSection:
     """UI-სექცია + ფონური ანალიზი; მასპინძელი — ``ParcelSearchTool``."""
 
@@ -228,63 +281,7 @@ class ShpAnalysisSection:
         h.status.set(self.tr("status_done", n=len(rows)))
 
     # ---- ანგარიში ლოგში ----
-    def _detail(self, r):
-        lang = self.host.app.lang
-        if r["kind"] == core.POLYGON:
-            txt = self.tr("d_poly", a=core.fmt_area(r["area_total"], lang),
-                          p=core.fmt_length(r["perimeter_total"], lang),
-                          m=core.fmt_area(r["area_max"], lang), n=r["count"])
-        elif r["kind"] == core.LINE:
-            txt = self.tr("d_line", l=core.fmt_length(r["length_total"], lang),
-                          m=core.fmt_length(r["length_max"], lang), n=r["count"])
-        else:
-            txt = self.tr("d_point", n=r["count"])
-        if r.get("converted"):
-            txt += " · " + self.tr("converted", crs=r["crs_label"])
-        return txt
-
     def report(self, root, rows, top_n):
-        """რანჟირებები ლოგში (ყოველი ჩანაწერი — სახელი, მნიშვნელობა, დეტალები, საქაღალდე)."""
-        h = self.host
-        lang = h.app.lang
-        log = h._log
-        summary = core.summarize(rows)
-        ranks = core.rank_layers(rows, top_n)
-        shown = {
-            "poly_area": lambda r: core.fmt_area(r["area_total"], lang),
-            "poly_perimeter": lambda r: core.fmt_length(r["perimeter_total"], lang),
-            "poly_area_max": lambda r: core.fmt_area(r["area_max"], lang),
-            "poly_count": lambda r: str(r["count"]),
-            "line_length": lambda r: core.fmt_length(r["length_total"], lang),
-            "line_length_max": lambda r: core.fmt_length(r["length_max"], lang),
-            "line_count": lambda r: str(r["count"]),
-            "point_count": lambda r: str(r["count"]),
-        }
-        log("")
-        log("=" * 60)
-        log(self.tr("hdr", root=root))
-        log(self.tr("counts", total=summary["total"], p=summary[core.POLYGON],
-                    l=summary[core.LINE], pt=summary[core.POINT]))
-        log("=" * 60)
-        for key, _kind, _field in core.RANKINGS:
-            entries = ranks[key]
-            if not entries:
-                continue
-            log("")
-            log("▶ {} {}".format(self.tr("rank_" + key), self.tr("top_n", n=len(entries))))
-            for i, r in enumerate(entries, start=1):
-                log("  {}. {} — {}".format(i, r["name"], shown[key](r)))
-                log("       " + self._detail(r))
-                log("       " + self.tr("folder", f=r["folder"]))
-
-        for status, key in ((core.NO_CRS, "skip_nocrs"), (core.EMPTY, "skip_empty"),
-                            (core.ERROR, "skip_error")):
-            items = summary[status]
-            if not items:
-                continue
-            log("")
-            log("⚠ " + self.tr(key, n=len(items)))
-            for r in items:
-                extra = " — " + r["error"] if status == core.ERROR and r["error"] else ""
-                log("    {}{}".format(r["path"], extra))
-        log("=" * 60)
+        """რანჟირებები ლოგში — ტექსტი report_lines-იდან (საერთო V2-თან)."""
+        for line in report_lines(root, rows, top_n, self.host.app.lang):
+            self.host._log(line)

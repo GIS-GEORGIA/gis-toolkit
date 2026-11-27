@@ -199,7 +199,7 @@ from tools.regions import REGION_CODES, region_name, layer_display, layer_code
 from tools.fields import pick_code_field
 # ძებნის სუფთა ლოგიკა — GUI-სგან დამოუკიდებელი, ტესტირებადი
 from tools.search_core import (CHUNK_SIZE, normalize, chunked,
-                               parse_manual_codes, run_search)
+                               parse_manual_codes, run_search, write_not_found)
 
 
 # ---------------------------------------------------------------------------
@@ -754,11 +754,10 @@ class ParcelSearchTool(ToolFrame):
 
         # ვერ ნაპოვნის ავტომატური შენახვა shapefile-ის გვერდით
         if not_found and result["out_path"]:
-            side = os.path.splitext(result["out_path"])[0] + "_NOT_FOUND.txt"
             try:
-                with open(side, "w", encoding="utf-8") as f:
-                    f.write("\n".join(not_found))
-                self._log(self.tr("nf_saved", p=side))
+                side = write_not_found(result["out_path"], not_found)
+                if side:
+                    self._log(self.tr("nf_saved", p=side))
             except Exception:
                 pass
 

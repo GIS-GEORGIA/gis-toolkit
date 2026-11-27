@@ -318,13 +318,23 @@ def _read_dxf_via_ezdxf(path, log):
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=None)
 
 
-def _normalize_crs(gdf, target_epsg):
+def _normalize_crs(gdf, target_epsg, log=None, assume_missing_crs=True):
+    """Every CRS change is REPORTED. A source WITHOUT a CRS gets the selected one only when
+    ``assume_missing_crs`` (the user's explicit choice); otherwise it is written as it is, without a CRS."""
     if not target_epsg:
         return gdf
+    log = log or (lambda _m: None)
     target = "EPSG:{}".format(int(target_epsg))
     if gdf.crs is None:
+        if not assume_missing_crs:
+            log("⚠ source has NO CRS - written WITHOUT a CRS ({} is not assumed). If the drawing is in that "
+                "system, enable “label files without a CRS”.".format(target))
+            return gdf
+        log("⚠ source has NO CRS - the selected {} is ASSUMED (coordinates not transformed). "
+            "Check that the drawing really is in this system.".format(target))
         return gdf.set_crs(target, allow_override=True)
     if str(gdf.crs) != target:
+        log("ℹ reprojecting {} -> {}".format(gdf.crs.to_string(), target))
         return gdf.to_crs(target)
     return gdf
 
@@ -352,16 +362,19 @@ def _split_by_geom_type(gdf):
     return result
 
 
-def _clear_output(out_path, is_dir):
-    """ძველი გამომავალის მოცილება ხელახლა ჩაწერამდე (gdb — საქაღალდეა)."""
-    if is_dir:
-        if os.path.isdir(out_path):
-            shutil.rmtree(out_path)
-    elif os.path.exists(out_path):
-        os.remove(out_path)
+def free_base(out_dir, base, fmt):
+    """``base`` or ``base_2``, ``base_3`` … so that the output (``base/`` folder for shp, ``base.gpkg``,
+    ``base.gdb``) does not exist yet — an earlier result is never deleted or overwritten (also when two
+    sources in a batch have the same name)."""
+    ext = "" if fmt == "shp" else FORMATS[fmt][1]
+    cand, n = base, 1
+    while os.path.exists(os.path.join(out_dir, cand + ext)):
+        n += 1
+        cand = "{}_{}".format(base, n)
+    return cand
 
 
-def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
+def convert_file(path, out_dir, fmt, target_epsg=None, log=None, assume_missing_crs=True):
     """ერთი DXF/DWG (ან ნებისმიერი GDAL-ვექტორის) კონვერტაცია ``fmt``-ში.
 
     fmt — 'shp' | 'gpkg' | 'gdb'. აბრუნებს dict-ს:
@@ -373,8 +386,8 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
     საერთოდ არ აქვს.
     """
     log = log or (lambda _m: None)
-    base = sanitize(os.path.splitext(os.path.basename(path))[0])
     os.makedirs(out_dir, exist_ok=True)
+    base = free_base(out_dir, sanitize(os.path.splitext(os.path.basename(path))[0]), fmt)
 
     ext = os.path.splitext(path)[1].lower()
     tmp_source = None
@@ -418,7 +431,7 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
                 return {"source": path, "out_path": None, "layers": [],
                         "error": gdal_err, "reason": None}
         return _write_converted(source_layers, base, path, out_dir, fmt,
-                                target_epsg, log)
+                                target_epsg, log, assume_missing_crs)
     finally:
         if tmp_source is not None:
             try:
@@ -428,7 +441,7 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None):
 
 
 def _write_converted(source_layers, base, source_path, out_dir, fmt,
-                     target_epsg, log):
+                     target_epsg, log, assume_missing_crs=True):
     """წაკითხული შრეების ჩაწერა ``fmt``-ში — ``convert_file``-ის შიდა ნაწილი
     (გამოცალკევებული, რომ DWG → GPKG ხიდის შემდეგაც იმავე ნაკადს გაუყვეს)."""
     driver, ext = FORMATS[fmt]
@@ -441,12 +454,15 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
             buckets = _split_by_geom_type(gdf)
             multi = len(buckets) > 1
             for bucket, sub in buckets.items():
-                sub = _normalize_crs(sub, target_epsg)
+                sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
                 name = sanitize(lyr_name)
                 if multi:
                     name += "_" + bucket
                 out_path = os.path.join(out_root, name + ".shp")
-                _clear_output(out_path, is_dir=False)
+                k = 1
+                while os.path.exists(out_path):          # same layer name twice in one source
+                    k += 1
+                    out_path = os.path.join(out_root, "{}_{}.shp".format(name, k))
                 sub.to_file(out_path, driver=driver, encoding="utf-8")
                 written.append((name, len(sub)))
                 log("  ✓ {}: {}".format(name, len(sub)))
@@ -456,8 +472,7 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
     # gdb — OpenFileGDB-ს, SHP-ის მსგავსად, ერთგვაროვანი გეომეტრია სჭირდება
     # თითო შრეში (შერეულზე „Unsupported geometry type“-ს იძლევა) — იყოფა.
     # gpkg — მრავალშრიანი, შერეული გეომეტრიაც დაიტევს — პირდაპირ იწერება.
-    out_path = os.path.join(out_dir, base + ext)
-    _clear_output(out_path, is_dir=(fmt == "gdb"))
+    out_path = os.path.join(out_dir, base + ext)        # base is free (free_base) — nothing is replaced
     first = True
     for lyr_name, gdf in source_layers:
         if gdf is None or len(gdf) == 0:
@@ -470,7 +485,7 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
         else:
             parts = [(sanitize(lyr_name), gdf)]
         for name, sub in parts:
-            sub = _normalize_crs(sub, target_epsg)
+            sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
             sub.to_file(out_path, layer=name, driver=driver,
                        mode="w" if first else "a")
             first = False
@@ -481,7 +496,7 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
 
 
 def convert_batch(files, out_dir, fmt, target_epsg=None,
-                  log=None, progress=None, cancel=None):
+                  log=None, progress=None, cancel=None, assume_missing_crs=True):
     """რამდენიმე ფაილის კონვერტაცია. აბრუნებს dict-ს: files_ok, files_skipped,
     files_empty, results ([convert_file-ის შედეგი, …]), cancelled."""
     log = log or (lambda _m: None)
@@ -497,7 +512,7 @@ def convert_batch(files, out_dir, fmt, target_epsg=None,
                     "files_empty": empty, "results": results}
         name = os.path.basename(path)
         log(name)
-        r = convert_file(path, out_dir, fmt, target_epsg, log=log)
+        r = convert_file(path, out_dir, fmt, target_epsg, log=log, assume_missing_crs=assume_missing_crs)
         results.append(r)
         if r["error"]:
             skipped += 1

@@ -1,0 +1,10 @@
+# GIS_BOX V2 - optional dependencies (each enables one feature; the app starts without them)
+PySide6>=6.6              # modern V2 GUI
+ezdxf>=1.4                # DWG/DXF conversion
+psycopg[binary]>=3.1      # PostgreSQL / PostGIS
+numpy>=1.23
+opencv-python>=4.6
+Pillow>=9.0
+PyMuPDF>=1.23
+rapidocr-onnxruntime>=1.3 # OCR for the coordinate extractor
+pyodbc>=5.0; sys_platform == "win32"   # .mdb transfer (also needs MS Access Database Engine 64-bit)

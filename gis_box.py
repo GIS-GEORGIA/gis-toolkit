@@ -568,6 +568,14 @@ class GisBoxApp(tk.Tk):
                 return self.frames[i]
         return None
 
+    def show_tool_by_key(self, key):
+        """ხელსაწყოზე გადართვა სტაბილური key-ით (tid ან ინგლისური სახელი) — V2 გარსის ``--tool`` არგუმენტისთვის."""
+        for i, spec in enumerate(self.tool_specs):
+            if spec.get("key") == key or spec.get("tid") == key:
+                self.show(i)
+                return self.frames[i]
+        return None
+
     def _make_map_tool(self, master):
         from tools.map_services import MapServicesTool
         return MapServicesTool(master, self)
@@ -1056,5 +1064,20 @@ if __name__ == "__main__":
     if "--gdb2pg-run" in sys.argv:
         from tools.gdb2postgis_cli import run_headless
         sys.exit(run_headless())
+    if "--v2" in sys.argv:                         # V2 (PySide6) ინტერფეისი იმავე exe-დან: GIS_BOX.exe --v2
+        from gis_box_v2 import main as _v2_main    # Qt იტვირთება geopandas-მდე (Windows-ის DLL კონფლიქტი)
+        sys.exit(_v2_main([a for a in sys.argv[1:] if a != "--v2"]))
+    try:
+        from tools import update_manager
+        update_manager.cleanup_on_start()              # removes *.gbold-* leftovers of a previous update (frozen only)
+    except Exception:
+        pass
     _enable_dpi_awareness()
-    GisBoxApp().mainloop()
+    _app = GisBoxApp()
+    if "--tool" in sys.argv:                       # V2 გარსიდან: კონკრეტული ხელსაწყოს პირდაპირ გახსნა
+        try:
+            _key = sys.argv[sys.argv.index("--tool") + 1]
+            _app.after(300, lambda: _app.show_tool_by_key(_key))
+        except IndexError:
+            pass
+    _app.mainloop()

@@ -17,6 +17,40 @@ tools (Document search, Collect files) live in a separate project — [Toolbox](
 
 ---
 
+## GIS_BOX V2 (ფილიალი `feature/gis-box-v2`) / V2 branch
+
+ახალი ინტერფეისი **PySide6**-ზე, ცენტრალური ლოგირებით, უსაფრთხო CRS მენეჯმენტითა და GitHub-ზე დაფუძნებული
+განახლებებით. კლასიკური ვერსია (`gis_box.py`, `GIS_BOX.exe`) **უცვლელია და ისევ მუშაობს**; V2 `main`-ში ჯერ არ არის შეერთებული.
+
+A new **PySide6** interface with centralized logging, safe CRS handling and GitHub-based updates.
+The classic app is unchanged; V2 is **not merged into `main`** yet.
+
+```bash
+python gis_box_v2.py               # V2 (Windows: GIS_BOX_V2.bat · Linux: ./GIS_BOX_V2.sh)
+python gis_box_v2.py --selftest    # ფანჯრის აგების შემოწმება GUI-ს გარეშე / headless self-test
+python -m tools.env_check          # გარემოს დიაგნოსტიკა / environment diagnostics
+```
+
+- გვერდითი მენიუ: ძებნა, ფავორიტები, ბოლოს გამოყენებული, კატეგორიები · ღია/მუქი თემა · ქართული/English ·
+  ფონური დამუშავება პროგრესითა და გაუქმებით · შეტყობინებები.
+- **ნატიური V2 ხელსაწყოები:** CRS მენეჯერი, განახლებები, ბუფერების აგება, რუკის სერვისები, სახელების გადარქმევა, Shp → კოორდინატები, დაცვის ზონის კვეთა, კვეთა და შაბლონი, გეომეტრიების შეგროვება, DWG/DXF კონვერტაცია, ნაკვეთის ძებნა, კოორდინატების ამომღები, ბაზებს შორის მონაცემთა გადატანა, GDB → PostGIS — ყველა 14 ხელსაწყო. კლასიკური ფანჯარა უცვლელად რჩება და ცალკეც ეშვება.
+- **CRS მენეჯერი:** CRS-ის აღმოჩენა, მინიჭება (`set_crs`, **მხოლოდ დადასტურებით**) და გადაყვანა (`to_crs`) **ახალ** ფაილში, ანგარიშით.
+- **ლოგირება:** 3 დონე (მომხმარებლის / დეტალური / debug), TXT + JSONL + SQLite ისტორია, პაროლებისა და ტოკენების ამოჭრა.
+- **განახლებები:** GitHub Releases, SHA256, ბექაპი და უკან დაბრუნება; ჩამოტვირთვა/ინსტალაცია მხოლოდ დასტურით.
+
+| დოკუმენტი | შინაარსი |
+|---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | ინსტალაცია და გაშვება — Windows / Linux, პარამეტრების ადგილები |
+| [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | core / optional დამოკიდებულებები, სისტემური ბიბლიოთეკები |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | პრობლემების გადაჭრა |
+| [docs/v2_shell.md](docs/v2_shell.md) | V2 ინტერფეისის არქიტექტურა და გადატანის სტატუსი |
+| [docs/crs_manager.md](docs/crs_manager.md) | CRS მენეჯერი და გაზომვების აუდიტი |
+| [docs/logging.md](docs/logging.md) | ცენტრალური ლოგირება |
+| [docs/update_manager.md](docs/update_manager.md) | განახლებების მენეჯერი და მისი შეზღუდვები |
+| [docs/db_transfer.md](docs/db_transfer.md) · [docs/gdb_to_postgis.md](docs/gdb_to_postgis.md) | ბაზების გადატანა |
+
+---
+
 ## ინსტრუმენტები / Tools
 
 | ინსტრუმენტი | აღწერა |
@@ -107,6 +141,8 @@ python gis_box.py
 ან Windows-ზე ორმაგი დაწკაპუნებით: `GIS_BOX.bat`.
 Or on Windows double-click `GIS_BOX.bat`.
 
+V2 ინტერფეისი: `python gis_box_v2.py` (`GIS_BOX_V2.bat` / `GIS_BOX_V2.sh`). დეტალურად — [docs/INSTALL.md](docs/INSTALL.md).
+
 ### Linux (და macOS)
 
 პროგრამა Linux-ზეც მუშაობს — ერთი და იგივე კოდი, პლატფორმაზე დამოკიდებული ნაწილები
@@ -144,8 +180,12 @@ sh install_linux.sh          # .venv + დამოკიდებულებ�
 The base tool (template copy) uses only the standard library. For the other tools:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt                                  # ძველი სრული სია / full legacy list
+pip install -r requirements-core.txt -r requirements-optional.txt # V2: ძირითადი + არასავალდებულო
+python -m tools.env_check                                        # რა აკლია და როგორ დავაყენო
 ```
+
+სრული აღწერა (სისტემური ბიბლიოთეკები, PySide6-ის იმპორტის რიგი Windows-ზე): [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
 თუ პაკეტი აკლია, GIS_BOX მაინც გაიხსნება — შესაბამისი ხელსაწყო უბრალოდ შეცდომას აჩვენებს.
 If a package is missing, GIS_BOX still opens — the affected tool just shows an error.
@@ -190,7 +230,14 @@ tool via “💾 Remember”). The tool switches between them via the dropdown.
 ```
 GIS_BOX/
 ├─ gis_box.py                # მთავარი აპლიკაცია / main app (sidebar + lazy loading)
+├─ gis_box_v2.py             # V2 შესასვლელი (PySide6) / V2 entry point
+├─ v2/                       # V2 გარსი: main_window, workers (thread + Qt signals), registry, settings, themes, pages/
 ├─ tools/
+│  ├─ version.py             # ერთადერთი ვერსიის განსაზღვრა (SemVer)
+│  ├─ env_check.py           # გარემოს დიაგნოსტიკა
+│  ├─ crs_manager.py         # CRS: აღმოჩენა / set_crs / to_crs / ანგარიში (GUI-free)
+│  ├─ logging_manager.py     # ცენტრალური ლოგირება (TXT/JSONL/SQLite, საიდუმლოების ამოჭრა)
+│  ├─ update_manager.py      # GitHub Releases განახლებები (stdlib, GUI-free)
 │  ├─ base.py                # ToolFrame ბაზისური კლასი
 │  ├─ parcel_search.py       # ნაკვეთის ძებნა (მრავალი ბაზა)
 │  ├─ rename_transliterate.py# სახელების გადარქმევა + მასალის შემოწმება
@@ -220,7 +267,11 @@ GIS_BOX/
 ├─ GIS_BOX.bat / .command / .sh / .desktop  # გამშვებები Windows / macOS / Linux
 ├─ install_linux.sh          # Linux: .venv + დამოკიდებულებები + მენიუს ჩანაწერი
 │  ├─ platform_utils.py     # შრიფტები / ფაილის გახსნა / Desktop — Win·Mac·Linux
-├─ requirements.txt          # ხელსაწყოების დამოკიდებულებები
+├─ requirements.txt          # ხელსაწყოების დამოკიდებულებები (სრული, ძველი)
+├─ requirements-core.txt     # V2: ძირითადი დამოკიდებულებები
+├─ requirements-optional.txt # V2: არასავალდებულო (PySide6, OCR, PostgreSQL, ...)
+├─ GIS_BOX_V2.bat / .sh      # V2 გამშვებები
+├─ docs/                     # INSTALL, DEPENDENCIES, TROUBLESHOOTING, TECHNICAL, ...
 └─ requirements-dev.txt      # ტესტების/დეველოპმენტის დამოკიდებულებები
 ```
 
@@ -245,6 +296,9 @@ CI runs it on every push/PR (Python 3.11/3.12).
 pip install -r requirements-dev.txt
 pytest
 ```
+
+V2-ის ტესტები (`tests/test_v2_*.py`) საჭიროებს PySide6-ს და იგნორირდება მის გარეშე; ისინი Qt-ის `offscreen` პლატფორმაზე
+მუშაობს და დროებით საქაღალდეებს იყენებს — რეალურ პარამეტრებს/ლოგებს არ ეხება.
 
 ---
 

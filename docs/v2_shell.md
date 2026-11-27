@@ -1,0 +1,57 @@
+# GIS_BOX V2 - PySide6 shell
+
+```
+python gis_box_v2.py             # start the V2 window
+python gis_box_v2.py --selftest  # build the window offscreen, print OK (CI / diagnostics)
+```
+Needs `PySide6` (`requirements-optional.txt`). The PyInstaller build contains it too: `GIS_BOX.exe --v2`. The classic app `gis_box.py` / `GIS_BOX.exe` is untouched and keeps working.
+
+## What the window has
+- **Sidebar:** search (names + descriptions, Georgian and English), **favorites**, **recently used**, tool **categories**, tool descriptions as tooltips.
+- **Tool pages:** header with favorite toggle, description, then the tool itself.
+- **Status bar:** progress bar + **Cancel** for background tasks; **toast notifications** for success/errors.
+- **View menu:** light/dark theme, Georgian/English (applied immediately, remembered).
+- **Service menu:** open logs folder, export diagnostic report (redacted zip), environment check.
+- Settings: `v2_settings.json` in the per-user config folder (`%LOCALAPPDATA%\GIS_BOX`, `~/.config/GIS_BOX`; override `GIS_BOX_V2_DIR`) - atomic writes, corrupt/invalid values fall back to defaults.
+
+## Architecture
+| Module | Role |
+|---|---|
+| `v2/registry.py` | tool list, categories, bilingual names/descriptions, how each tool opens (no Qt) |
+| `v2/settings.py` | settings, favorites, recents (no Qt) |
+| `v2/workers.py` | `run_task()`: GIS function in a plain Python thread (NOT `QThreadPool`, see below), progress/cancel, callbacks delivered in the GUI thread, every task recorded in the operation history |
+| `v2/main_window.py` | window, sidebar, pages, notifications |
+| `v2/themes.py`, `v2/i18n.py` | theme palettes + stylesheet, UI strings |
+| `v2/pages/*.py` | native tool pages (first one: CRS Manager) |
+| `v2/launcher.py` | opens a not-yet-ported tkinter tool in the classic window (`gis_box.py --tool KEY`, separate process, no shell) |
+
+GIS logic stays in `tools/*_core.py`; pages only call it through `shell.run(...)`.
+
+## Porting status
+| Tool | V2 |
+|---|---|
+| CRS Manager | **native PySide6 page** (detect, assign with confirmation, reproject to a NEW file, report) |
+| Updates | **native PySide6 page** (see [update_manager.md](update_manager.md)) |
+| Line buffers | **native PySide6 page** - same rules as the classic tool (EPSG:32637/32638 only, conversion only with consent, new numbered shapefiles, source never changed); logic in `tools/line_buffer_core.py` (`scan_line_shapefiles`, `plan_layer`, `build_buffers`), tested with exact area checks |
+| Map services | **native PySide6 page** (URL cards from `map_services.txt`, copy button, filter); parser in `tools/map_services_core.py`, checked to match the classic parser |
+| Rename → Latin | **native PySide6 page** (preview table old / new / status, rename after confirmation in a background task, undo of the last batch, content check); logic in `tools/translit.py` shared with the classic tool. All files of one dataset (`a.shp`, `a.dbf`, `a.shp.xml` …) are renamed together or not at all: a conflict on one file skips the whole set, and a failed rename (e.g. a file held open by ArcGIS) rolls back the files of that set already renamed |
+| Shp → coordinates | **native PySide6 page**: folder scan, auto-pick (Gas_Pipe_Crossing…), UTM zone auto / 37 / 38, double / integer, header templates (same `shp_coords_templates.txt` as the classic tool; Latin→Georgian converter), crossing-angle column, Excel export in a background task, formatted clipboard copy, transparent PNG, batch, ° on an existing file. The Excel writer is `tools/shp_coords_core.py`, shared with the classic tool and checked cell-by-cell (values, formats, fonts, borders, merges, widths) against the classic output. V2 differences: a batch skips layers without a CRS (the classic batch assumed the chosen zone) and never overwrites an existing .xlsx; “° on a file” does not re-save a file that has no angle column |
+| Zone intersection / Crossing & templates | **native PySide6 pages** (one class, two variants: parcel × protection zone, line × line). Zone filter by attribute or row (FID), crossing points written as a NEW `<name><UTM zone>_<N>.shp` (never overwriting), parcel / cut-out / remaining areas, saving the cut-out and remaining pieces, shallow-crossing warning (< 15°), geographic parcel CRS refused, hand-over to the native “Shp → coordinates” page with the areas (and “Excel table” = hand-over + export), ready-made template copy sections (`_<next N>`, never overwriting). Logic in `tools/zone_intersect_core.py`, shared with the classic tool; texts reuse the classic ZTR / LTR catalogues |
+| Geometry → GeoPackage | **native PySide6 page**: format tick boxes (+ “other” extensions), output CRS auto / 32637 / 32638, count, collect in a background task with progress and cancel. Output `…_DDMMYY.gpkg`; if it exists `_2`, `_3` … (both V2 and classic now; the core refuses to overwrite). Files WITHOUT a CRS are skipped and listed unless “treat as the output CRS” is ticked (default off - in V2 and, since this change, in the classic tool too, which used to assume it with only a log warning; the classic completion message now also says how many files were skipped for a missing CRS) |
+| DWG/DXF → SHP/GPKG/GDB | **native PySide6 page**: file or folder (recursive), format, CRS native / 32637 / 32638, count, convert in a background task with progress and cancel, DWG reader hints (old driver / no reader / DXF gap) as one dialog each. Every output gets a free name (`name`, `name_2` …) - previously an existing .gpkg/.shp was deleted and a .gdb folder removed before writing, and two sources with the same name in one batch overwrote each other (fixed in the core, so also for the classic tool). A drawing without a CRS is labelled with the selected CRS only when “label drawings without a CRS” is ticked (default off: written without a CRS - in V2 and now also in the classic tool, which used to assume it with only a log warning; in both the box is enabled only when a CRS is selected) |
+| Parcel search | **native PySide6 page**: database list (remember / remove), layers with region names, code field auto-pick, codes typed or loaded from CSV/Excel (column chooser), search in a background task with progress and cancel, not-found list (+ save), and the “shapefile analysis across folders” section (report text shared with the classic tool via `shp_analysis.report_lines`). Results are written under a free name (`found_parcels`, `found_parcels_2` …) together with `_NOT_FOUND.txt` - previously an existing .shp/.gpkg and the not-found file were overwritten (fixed in `search_core`, so also for the classic tool) |
+| Coord. extractor | **native PySide6 page**: map from an image, a PDF page (page navigation), the clipboard (new in V2, e.g. a Win+Shift+S snip) or a screen grab (Qt `ScreenSnip`: the window hides, a frozen shot of the whole virtual desktop is shown, drag a box, Esc cancels); zoom / pan / fit canvas. OCR tab: mark the table, OCR in a background task (rapidocr / tesseract / easyocr, remembered), editable table, add / delete rows. Geo-reference tab: control points with real X/Y (affine fit, RMSE), polygon vertices, computed coordinates and area. Export Excel / CSV / JSON to a file the user picks. "Format Excel" asks before changing the chosen workbook and again if cells from E6 on are already filled (the classic tool now asks too - it used to overwrite them silently). Logic stays in `tools/coordextract` (shared); values like 500020.0000001 from the fit are now shown as 500020 in both versions |
+| Database Data Transfer | **native PySide6 page**: source / destination (.mdb file or .gdb folder) with name and size, year field + year tick boxes found by "Check databases", backup / extra-database / FINAL / confirm-once / records-without-date options, layer mapping by geometry type, per-layer table, summary and warnings panes, merge, open log. Check, analysis, write and merge each run as a background task (progress + Cancel in the status bar; the engine rolls a cancelled or failed write back). The workflow and all texts moved to `tools/pgdb_transfer_flow.py`, which the classic tool now calls too (its own UI tests unchanged and passing), so the steps and dialogs are identical: analysis -> confirmation with numbers -> one transaction per year; a .gdb destination is never modified (new FINAL copy + fidelity check) |
+| GDB → PostGIS | **native PySide6 page**: GDAL path + version, source folder / .gdb or .mdb / layers (read with ogrinfo in a background task), PostGIS connection (masked password, test in the background), mode / reprojection / prefix / promote / GiST / COPY, incremental sync (key / change field, auto-detect, deletes), schedule (in-app timer or Windows Task Scheduler), import in a background task with Cancel (between layers), history (runs by date, feature IDs, delete features / record). Safer than the classic window: before an "overwrite" (or an incremental first load) the page tests the connection, finds which target tables already exist and asks naming them (no connection = no guess, no import); turning the schedule on asks first (and names the Windows task); "remember password" is opt-in. "Remember" writes the classic settings key that the scheduled `--gdb2pg-run` reads (`gdb2postgis_cli.save_cfg`) |
+
+All 14 tools are native now; the classic window is unchanged and still starts on its own. The legacy launcher stays in the code (no tool uses it at the moment).
+
+To port a tool: add a page class in `v2/pages/`, set `kind="native"` and `page="module:Class"` in `registry.py`.
+
+## Why not QThreadPool
+PySide creates a fresh Python thread state for every `QRunnable.run`. pyproj keeps its PROJ context in thread-local storage, so a `detect` task followed by a `reproject` task crashed the process (access violation on Windows, segmentation fault on Linux) with pyproj 3.7 / geopandas 1.2 - found by CI, reproduced locally, gone with a plain `threading.Thread`. Results still reach the GUI thread through queued Qt signals. Do not move GIS work back to `QThreadPool` without re-running `tests/test_v2_shell.py` against the newest geopandas/pyproj.
+
+## Known limitations
+- Qt must be imported **before** geopandas/shapely on Windows (the other order crashes with an access violation). `gis_box_v2.py` and `conftest.py` already do this - keep it in new entry points.
+- The Qt `offscreen` platform renders no fonts (boxes instead of text); screenshots for review need a real platform.
+- Ported tools are not yet feature-complete replacements: until a tool is native, the classic window is the reference.

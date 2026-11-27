@@ -39,6 +39,8 @@ TR = {
     "format_empty":     {"en": "No coordinate rows found in the file.",
                          "ka": "ფაილში კოორდინატების რიგები ვერ მოიძებნა."},
     "format_failed":    {"en": "Formatting failed", "ka": "ფორმატირება ვერ მოხერხდა"},
+    "format_busy":      {"en": "Cells from E6 on are already filled ({n} cells) - they will be overwritten. Continue?",
+                         "ka": "უჯრები E6-დან უკვე შევსებულია ({n} უჯრა) — გადაიწერება. გავაგრძელო?"},
     "ocr_tip":          {"en": "Tip: double-click a cell to fix an OCR mistake.",
                          "ka": "რჩევა: ორმაგი დაწკაპუნებით ჩაასწორე OCR-ის შეცდომა."},
 

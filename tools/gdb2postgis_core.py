@@ -76,6 +76,20 @@ def _no_window() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
+_PG_PASSWORD = ""
+
+
+def _set_pg_password(password: str) -> None:
+    """Remember the PostgreSQL password for child processes (env var only, never argv/log)."""
+    global _PG_PASSWORD
+    _PG_PASSWORD = password or ""
+    try:                                          # keep the password out of every V2 log
+        from tools.logging_manager import register_secret
+        register_secret(_PG_PASSWORD)
+    except Exception:                             # noqa: BLE001
+        pass
+
+
 def _child_env(tool_path: str) -> dict:
     """
     Build an isolated environment for the GDAL binary.
@@ -87,6 +101,8 @@ def _child_env(tool_path: str) -> dict:
     folders that ship next to this specific binary.
     """
     env = dict(os.environ)
+    if _PG_PASSWORD:
+        env["PGPASSWORD"] = _PG_PASSWORD
     for var in ("PROJ_LIB", "PROJ_DATA", "GDAL_DATA", "GDAL_DRIVER_PATH"):
         env.pop(var, None)
     if not tool_path:
@@ -271,9 +287,13 @@ class PgConfig:
     schema: str = "public"
 
     def pg_conn_string(self) -> str:
+        """OGR connection string WITHOUT the password (it would be visible in the process
+        command line). The password is handed to the child process through the
+        ``PGPASSWORD`` environment variable instead - see :func:`_child_env`."""
+        _set_pg_password(self.password)
         return (
             f"PG:host={self.host} port={self.port} dbname={self.dbname} "
-            f"user={self.user} password={self.password} active_schema={self.schema}"
+            f"user={self.user} active_schema={self.schema}"
         )
 
 

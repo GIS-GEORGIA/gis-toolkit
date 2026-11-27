@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/gis-box-v2"]
   pull_request:
 
 jobs:
@@ -57,3 +57,77 @@ jobs:
       # xvfb-run — რეალური Tk ფანჯარა ვირტუალურ ეკრანზე (Linux GUI ვალიდაცია)
       - name: Run tests (incl. GUI smoke under xvfb)
         run: xvfb-run -a python -m pytest -q
+
+  # ---------------------------------------------------------------------------
+  # სრული დამოკიდებულებები (geopandas, pyproj, PySide6 ...) — V2, CRS, გაზომვები, განახლებები.
+  # ზემოთა "test" job შეგნებულად მსუბუქია (მძიმე პაკეტების გარეშე სწორად ხრწნის შემოწმება).
+  # ---------------------------------------------------------------------------
+  test-full-linux:
+    name: Full tests, Linux (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # tkinter + xvfb + შრიფტი (კლასიკური GUI) და Qt-ის სისტემური ბიბლიოთეკები (PySide6)
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb fonts-dejavu-core \
+            libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libfontconfig1 libdbus-1-3
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip pytest -r requirements-core.txt PySide6 cryptography ezdxf
+
+      - name: Environment diagnostics
+        run: python -m tools.env_check || true
+
+      - name: V2 window self-test (offscreen)
+        run: QT_QPA_PLATFORM=offscreen python gis_box_v2.py --selftest
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: xvfb-run -a python -m pytest -q
+
+  test-full-windows:
+    name: Full tests, Windows (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip pytest -r requirements-core.txt PySide6 cryptography ezdxf
+
+      - name: Environment diagnostics
+        run: python -m tools.env_check
+        continue-on-error: true
+
+      - name: V2 window self-test (offscreen)
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python gis_box_v2.py --selftest
+
+      # .mdb ტესტები (Access ODBC დრაივერი) runner-ზე გამოტოვდება; დანარჩენი სრულად გაეშვება
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q

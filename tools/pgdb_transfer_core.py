@@ -971,6 +971,55 @@ def all_years_output_path(dst_path, folder=None):
     return os.path.join(folder or os.path.dirname(os.path.abspath(dst_path)), "{}_transferred_ALL_YEARS.mdb".format(stem))
 
 
+ACCESS_LIMIT_BYTES = 2 * 1024 ** 3          # Access (.mdb) ბაზის მაქსიმალური ზომა
+SIZE_WARN_FRACTION = 0.75                    # 1.5 გბ-ზე ვაფრთხილებთ
+
+
+def final_output_path(dst_path, stamp=None, folder=None):
+    """საბოლოო (გაერთიანებული) ბაზა ახალ ფაილად: ``<მიმღები>_FINAL_YYYYMMDD_HHMMSS.mdb`` (მიმღების გვერდით)."""
+    stem, ext = os.path.splitext(os.path.basename(dst_path))
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return os.path.join(folder or os.path.dirname(os.path.abspath(dst_path)),
+                        "{}_FINAL_{}{}".format(stem.replace(" ", "_"), stamp, ext or ".mdb"))
+
+
+def make_final_copy(dst_path, out_path, log=None):
+    """მიმღების **ახალი ასლი** (მიმღები არ იცვლება, არსებულ ფაილს არასდროს ვანაცვლებთ). შემდეგ ყველა წელი
+    ამ ასლში იწერება — შედეგი: მიმღების არსებული მონაცემები + გადატანილი წლები ერთ სუფთა ფაილში."""
+    log = log or TransferLog()
+    if not os.path.isfile(dst_path):
+        raise TransferError("missing", dst_path)
+    if os.path.exists(out_path):
+        raise TransferError("exists", out_path)
+    if same_file(dst_path, out_path):
+        raise TransferError("same_db")
+    tmp = out_path + ".part"
+    try:
+        shutil.copyfile(dst_path, tmp)
+        os.replace(tmp, out_path)
+    except OSError as e:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise TransferError("copy_failed", str(e))
+    log("final database (new file, copy of destination): {} ({:.1f} MB)".format(
+        out_path, os.path.getsize(out_path) / 1048576.0))
+    return out_path
+
+
+def size_warning(path):
+    """``None`` ან (ზომა მბ, ზღვრის %) — თუ ფაილი Access-ის 2 გბ ზღვარს უახლოვდება."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    if size >= ACCESS_LIMIT_BYTES * SIZE_WARN_FRACTION:
+        return size / 1048576.0, 100.0 * size / ACCESS_LIMIT_BYTES
+    return None
+
+
 def export_inserted(plan, out_path, log=None, progress=None, cancel=None, template=None, append=False):
     """მიმღებში **რეალურად ჩაწერილი** ჩანაწერების ასლი → **ახალი** ცალკე Personal Geodatabase.
 
