@@ -4,6 +4,7 @@ The stylesheet deliberately does NOT paint every QWidget (``QWidget { background
 transparent, so group boxes, cards and the sidebar can have their own surface colour without children painting
 over it. Widgets the stylesheet does not reach (scroll-area viewports, message boxes, native dialogs) take their
 colours from the QPalette set by :func:`apply`."""
+from pathlib import Path
 
 PALETTES = {
     "light": {"window": "#f4f6f8", "surface": "#ffffff", "surface_alt": "#f8fafb", "side": "#eaeef2",
@@ -25,6 +26,28 @@ CATEGORY_COLORS = {"crs": "#2f6fb5", "analysis": "#8a4fbf", "data": "#1a7f64", "
                    "system": "#5b6673"}
 
 
+ASSET_DIR = Path(__file__).resolve().parent / "assets"   # also bundled by gis_box.spec (v2/assets)
+ASSET_PREFIX = "gisbox"                                   # Qt search-path prefix: url(gisbox:<file>)
+ARROW_STATES = {"normal": "muted", "active": "accent", "disabled": "border_strong"}
+CHECK_STATES = {"normal": "accent_text", "disabled": "muted"}
+
+
+def arrow_asset(theme, state):
+    """File name of the drop-down chevron for ``theme`` / ``state`` (see ARROW_STATES)."""
+    return "arrow_down_{}_{}.svg".format("dark" if theme == "dark" else "light", state)
+
+
+def check_asset(theme, state):
+    """File name of the check-box tick for ``theme`` / ``state`` (see CHECK_STATES)."""
+    return "check_{}_{}.svg".format("dark" if theme == "dark" else "light", state)
+
+
+def asset_files():
+    """Every themed asset file the stylesheet references."""
+    return ([arrow_asset(t, st) for t in PALETTES for st in ARROW_STATES]
+            + [check_asset(t, st) for t in PALETTES for st in CHECK_STATES])
+
+
 def palette(name):
     return PALETTES.get(name, PALETTES["light"])
 
@@ -33,9 +56,34 @@ def category_color(cat_id):
     return CATEGORY_COLORS.get(cat_id, "#5b6673")
 
 
-def stylesheet(name):
-    p = palette(name)
+def _arrow_css(name):
+    """Combo-box drop-down button + chevron. Qt's native arrow is drawn by the platform style in a fixed
+    (light) colour once a stylesheet restyles the combo, so it all but vanished in the dark theme; styling
+    ``::drop-down`` alone removes the arrow completely. Both are replaced here by a themed SVG chevron that
+    looks the same with every Qt platform style (Windows, Fusion on Linux, X11 / Wayland).
+    The checked check box gets a tick the same way (it was a plain filled square, i.e. colour-only state)."""
+    a = {st: "{}:{}".format(ASSET_PREFIX, arrow_asset(name, st)) for st in ARROW_STATES}
     return """
+QComboBox {{ padding-right: 28px; }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 24px;
+    border: none; background: transparent; }}
+QComboBox::down-arrow {{ image: url({normal}); width: 12px; height: 12px; }}
+QComboBox::down-arrow:hover, QComboBox::down-arrow:focus, QComboBox::down-arrow:on {{ image: url({active}); }}
+QComboBox::down-arrow:disabled {{ image: url({disabled}); }}
+QCheckBox::indicator:checked {{ image: url({check}); }}
+QCheckBox::indicator:checked:disabled {{ image: url({check_disabled}); }}
+""".format(check="{}:{}".format(ASSET_PREFIX, check_asset(name, "normal")),
+           check_disabled="{}:{}".format(ASSET_PREFIX, check_asset(name, "disabled")), **a)
+
+
+def stylesheet(name, arrows=True):
+    """The application stylesheet. ``arrows=False`` leaves the combo-box arrow to the platform style (used only
+    when Qt cannot load SVG images, see :func:`register_assets`)."""
+    p = palette(name)
+    return _STYLE.format(**p) + (_arrow_css(name) if arrows else "")
+
+
+_STYLE = """
 QWidget {{ color: {text}; font-size: 13px; }}
 QMainWindow, QDialog, QStackedWidget {{ background: {window}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; }}
@@ -138,7 +186,7 @@ QFrame#errorPanel {{ background: {surface}; border: 1px solid {danger}; border-r
 QFrame#hline {{ background: {border}; max-height: 1px; border: none; }}
 
 /* ---- check / radio ---- */
-QCheckBox, QRadioButton {{ spacing: 7px; background: transparent; }}
+QCheckBox, QRadioButton {{ spacing: 7px; background: transparent; min-height: 20px; }}  /* not squeezed in small windows */
 QCheckBox::indicator, QRadioButton::indicator {{ width: 14px; height: 14px; border: 1px solid {border_strong};
     background: {surface}; }}
 QCheckBox::indicator {{ border-radius: 4px; }}
@@ -173,7 +221,7 @@ QScrollBar::handle:horizontal {{ background: {border}; border-radius: 3px; min-w
 QScrollBar::handle:horizontal:hover {{ background: {muted}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-""".format(**p)
+"""
 
 
 def qpalette(name):
@@ -194,11 +242,29 @@ def qpalette(name):
     return pal
 
 
+_assets_ok = None
+
+
+def register_assets():
+    """Make ``gisbox:<file>`` resolve to :data:`ASSET_DIR` (QDir search path - no absolute paths in the
+    stylesheet, so spaces / non-ASCII user folders and the PyInstaller bundle all work) and report whether the
+    chevron can actually be loaded (SVG image plugin present, asset files present)."""
+    global _assets_ok
+    if _assets_ok is None:
+        from PySide6.QtCore import QDir
+        from PySide6.QtGui import QImageReader
+        QDir.addSearchPath(ASSET_PREFIX, str(ASSET_DIR))
+        svg = b"svg" in [bytes(f) for f in QImageReader.supportedImageFormats()]
+        files = all((ASSET_DIR / f).is_file() for f in asset_files())
+        _assets_ok = bool(svg and files)
+    return _assets_ok
+
+
 def apply(app, name):
     """Apply theme ``name`` to the whole application. Re-applying the theme that is already active is skipped:
     every setPalette / setStyleSheet re-polishes EVERY live widget, which is what made opening a second window
     or re-selecting the same theme slow."""
-    css = stylesheet(name)
+    css = stylesheet(name, arrows=register_assets())
     if app.property("gisbox_theme") == name and app.styleSheet() == css:
         return False
     # Measured with all 14 tool pages open: replacing one stylesheet with another directly took ~0.5 s,

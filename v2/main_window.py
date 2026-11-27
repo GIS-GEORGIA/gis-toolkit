@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
                     self._tool_item(g, t)
             rec = [registry.BY_ID[i] for i in self.settings["recent_tools"] if i in registry.BY_ID][:5]
             if rec:
-                g = self._group("🕘 " + self.t("recent"))
+                g = self._group("◷ " + self.t("recent"))      # not an emoji: Linux often has no emoji font
                 for t in rec:
                     self._tool_item(g, t)
         for cid, names in registry.CATEGORIES:

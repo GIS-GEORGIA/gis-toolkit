@@ -3,6 +3,10 @@
 
     python gis_box_v2.py            # start the V2 window
     python gis_box_v2.py --selftest # build the window offscreen, print OK, exit (CI / diagnostics)
+    python gis_box_v2.py --selftest --all-pages [--report FILE]
+                                    # + build all 14 tool pages in both themes, load the theme assets and do a
+                                    #   tiny real GIS round trip (GDAL write/read, PROJ transform). For the packaged
+                                    #   app, which has no console: --report writes the result to FILE.
 """
 import os
 import sys
@@ -26,11 +30,74 @@ def main(argv=None):
     app.setApplicationName("GIS_BOX")
     win = MainWindow(Settings())
     if "--selftest" in argv:
-        print("OK GIS_BOX V2 window built:", win.windowTitle())
-        return 0
+        lines, ok = ["OK GIS_BOX V2 window built: " + win.windowTitle()], True
+        if "--all-pages" in argv:
+            ok, more = _selftest_all(app, win)
+            lines += more
+        text = "\n".join(lines + ["RESULT " + ("OK" if ok else "FAILED")])
+        if "--report" in argv and argv.index("--report") + 1 < len(argv):
+            with open(argv[argv.index("--report") + 1], "w", encoding="utf-8") as f:
+                f.write(text + "\n")
+        print(text)
+        return 0 if ok else 1
     install_excepthook(win)                            # log + show unexpected errors instead of a silent console
     win.show()
     return app.exec()
+
+
+def _selftest_all(app, win):
+    """Diagnostics for a build: every page, both themes, assets, GIS stack. Returns (ok, lines)."""
+    import platform
+    import tempfile
+    lines, ok = ["platform {} | Python {} | Qt platform {}".format(platform.platform(), platform.python_version(),
+                                                                  app.platformName())], True
+    from v2 import registry, themes
+    assets = themes.register_assets()
+    lines.append("theme assets (SVG chevrons / ticks): " + ("OK" if assets else "MISSING"))
+    ok &= assets
+    for theme in ("dark", "light"):
+        win.apply_theme(theme)
+        for t in registry.TOOLS:
+            try:
+                win.show_tool(t.id)
+                page = win.pages[t.id]
+                good = getattr(page, "native", True) is not None
+                err = getattr(page, "error", "")
+            except Exception as e:                         # noqa: BLE001 - reported
+                good, err = False, e
+            ok &= good
+            if theme == "dark" or not good:
+                lines.append("page {:<16} {} {}".format(t.id, theme, "OK" if good else "FAILED: {}".format(err)))
+    for mod, required in (("geopandas", True), ("pyogrio", True), ("pyproj", True), ("shapely", True),
+                          ("openpyxl", True), ("ezdxf", False), ("pymupdf", False), ("cv2", False),
+                          ("rapidocr_onnxruntime", False)):
+        try:
+            __import__(mod)
+            lines.append("module {:<22} OK".format(mod))
+        except Exception as e:                             # noqa: BLE001 - reported
+            lines.append("module {:<22} {}: {}".format(mod, "MISSING" if required else "optional, missing", e))
+            ok &= not required
+    try:
+        import geopandas as gpd
+        from pyproj import Transformer
+        from shapely.geometry import Point
+
+        from tools.safe_output import staged_file
+        d = tempfile.mkdtemp(prefix="gisbox_selftest_")
+        out = os.path.join(d, "ქართული test.gpkg")
+        with staged_file(out) as tmp:
+            gpd.GeoDataFrame({"name": ["ტესტი"]}, geometry=[Point(500000, 4650000)], crs=32638).to_file(
+                tmp, layer="t", driver="GPKG")
+        back = gpd.read_file(out, layer="t")
+        x, y = Transformer.from_crs(32638, 4326, always_xy=True).transform(500000, 4650000)
+        good = back["name"][0] == "ტესტი" and back.crs.to_epsg() == 32638 and abs(x - 45.0) < 1e-6 and 41 < y < 43
+        lines.append("GIS round trip (GPKG write/read, PROJ 32638->4326 = {:.4f},{:.4f}): {}".format(
+            x, y, "OK" if good else "FAILED"))
+        ok &= good
+    except Exception as e:                                 # noqa: BLE001 - reported
+        lines.append("GIS round trip FAILED: {}: {}".format(type(e).__name__, e))
+        ok = False
+    return ok, lines
 
 
 if __name__ == "__main__":

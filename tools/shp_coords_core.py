@@ -5,11 +5,11 @@ Point shapefile → formatted Excel: raw ArcGIS block A:D (FID, Id, POINT_X, POI
 from G (optional 3-row title, № / X / Y [+ crossing angle °]), and optionally the zone-intersection areas block to
 the right of the copy (same start row, 2 empty columns gap, ``kv.m``).
 """
-import glob
 import os
 import re
 
 from tools.apppaths import data_path
+from tools.platform_utils import files_with_suffix
 from tools.xlsx_format import save_workbook
 
 AUTO_PATTERNS = ("gas_pipe_crossing", "gas_pipe_protzone_crossing", "crossing")
@@ -94,7 +94,7 @@ def scan_point_shapefiles(folder):
     out = {}
     if not folder or not os.path.isdir(folder):
         return out
-    for shp in sorted(glob.glob(os.path.join(folder, "*.shp"))):
+    for shp in files_with_suffix(folder, ".shp"):          # .SHP too (Linux is case-sensitive)
         try:
             info = pyogrio.read_info(shp)
         except Exception:                      # noqa: BLE001 — unreadable file: not offered

@@ -48,6 +48,9 @@ def test_run_search_never_overwrites(tmp_path):
     assert results[0]["out_path"].endswith("found.shp") and results[1]["out_path"].endswith("found_2.shp")
     assert results[0]["found_list"] == ["01.02.03.004", "01.02.03.005"] and results[0]["not_found"] == ["99.99.99.999"]
     assert len(gpd.read_file(results[0]["out_path"])) == 2
+    gpkg = results[0]["out_path"][:-4] + ".gpkg"                 # layer named after the result, not the temp file
+    assert list(gpd.list_layers(gpkg)["name"]) == ["found"]
+    assert not [f for f in os.listdir(str(tmp_path / "res")) if ".part" in f]
     side = search_core.write_not_found(results[0]["out_path"], results[0]["not_found"])
     assert open(side, encoding="utf-8").read() == "99.99.99.999"
     assert search_core.write_not_found(results[0]["out_path"], ["x"]) is None                 # kept, not replaced

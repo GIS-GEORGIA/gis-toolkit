@@ -19,6 +19,8 @@ datas = [
     ("tools/vendor/libredwg", "tools/vendor/libredwg"),
     # ცარიელი Personal Geodatabase-ის სქემა-შაბლონი (ახალი ბაზა თარიღის გარეშე ჩანაწერებისთვის)
     ("tools/data/pgdb_template.mdb", "tools/data"),
+    # V2 theme assets (combo-box chevrons, SVG) - loaded through the Qt search path "gisbox:" (v2/themes.py)
+    ("v2/assets", "v2/assets"),
 ]
 binaries = []
 # ხელსაწყოები lazy-ად იტვირთება — ცხადად ჩავრთოთ ყველა submodule
@@ -33,7 +35,8 @@ hiddenimports += ["pyodbc"]
 import importlib.util
 hiddenimports += collect_submodules("v2") + ["gis_box_v2"]
 if importlib.util.find_spec("PySide6") is not None:
-    hiddenimports += ["PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+    # QtSvg: the qsvg image-format plugin needs it to draw the SVG chevrons of the V2 themes
+    hiddenimports += ["PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "PySide6.QtSvg"]
     # PyInstaller supports ONE Qt binding per build - exclude any others present in the environment
     _qt_excludes = [
         "PyQt5", "PyQt6", "PySide2",

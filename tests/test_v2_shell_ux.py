@@ -241,3 +241,121 @@ def test_db_transfer_deferred_call_is_dropped_when_the_page_is_deleted(win, monk
         QCoreApplication.processEvents()
         time.sleep(0.01)
     assert ran == [] and errors == []
+
+
+# ---------------------------------------------------------------- combo-box arrow (both themes)
+def test_combo_arrow_assets_exist_match_the_palette_and_load(qapp):
+    from PySide6.QtCore import QFile
+    from PySide6.QtGui import QImage
+    assert themes.register_assets()                                   # SVG plugin + files present
+    for name in ("light", "dark"):
+        css = themes.stylesheet(name)
+        for state, key in themes.ARROW_STATES.items():
+            fname = themes.arrow_asset(name, state)
+            assert "url({}:{})".format(themes.ASSET_PREFIX, fname) in css
+            svg = (themes.ASSET_DIR / fname).read_text(encoding="ascii")
+            assert themes.palette(name)[key] in svg                   # chevron colour follows the theme
+            assert QFile.exists("{}:{}".format(themes.ASSET_PREFIX, fname))
+            img = QImage("{}:{}".format(themes.ASSET_PREFIX, fname))
+            assert not img.isNull() and img.width() == 12
+        for sel in ("QComboBox::drop-down", "QComboBox::down-arrow:disabled", "QComboBox::down-arrow:on"):
+            assert sel in css
+        assert "down-arrow" not in themes.stylesheet(name, arrows=False)
+
+
+def _arrow_pixels(combo, color):
+    """Count pixels close to ``color`` in the right-hand arrow area of a rendered combo box."""
+    from PySide6.QtGui import QColor
+    img = combo.grab().toImage()
+    want = QColor(color)
+    n = 0
+    for x in range(img.width() - 26, img.width() - 4):
+        for y in range(2, img.height() - 2):
+            c = img.pixelColor(x, y)
+            if abs(c.red() - want.red()) + abs(c.green() - want.green()) + abs(c.blue() - want.blue()) < 60:
+                n += 1
+    return n
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_combo_arrow_is_drawn_in_theme_colour_for_normal_focus_and_disabled(win, theme):
+    from PySide6.QtWidgets import QComboBox
+    win.apply_theme(theme)
+    p = themes.palette(theme)
+    box = QComboBox(win)
+    box.addItems(["EPSG:32638", "ქართული"])
+    box.resize(220, 32)
+    box.show()
+    QCoreApplication.processEvents()
+    assert _arrow_pixels(box, p["muted"]) > 4                         # normal: visible chevron
+    box.setFocus()
+    QCoreApplication.processEvents()
+    if box.hasFocus():                                                # offscreen may not give focus
+        assert _arrow_pixels(box, p["accent"]) > 4
+    box.setEnabled(False)
+    QCoreApplication.processEvents()
+    assert _arrow_pixels(box, p["border_strong"]) > 4
+    box.setEnabled(True)
+    # Wayland only grants a popup after real user input on the parent window ("Failed to create grabbing
+    # popup") - also for a plain, unstyled QComboBox - so a programmatic showPopup() cannot be checked there.
+    if QApplication.instance().platformName() != "wayland":
+        box.showPopup()                                               # native drop-down still works
+        assert wait_for(lambda: box.view().isVisible(), 3)
+        box.hidePopup()
+    box.deleteLater()
+    win.apply_theme("light")
+
+
+def test_every_page_combo_box_gets_the_themed_arrow(win):
+    """Every combo box on every tool page shows the themed chevron, in both themes."""
+    from PySide6.QtWidgets import QComboBox
+    for theme in ("dark", "light"):
+        win.apply_theme(theme)
+        colour = themes.palette(theme)
+        pages_with_combos, checked = set(), 0
+        for t in registry.TOOLS:
+            win.show_tool(t.id)
+            QCoreApplication.processEvents()
+            for c in win.pages[t.id].findChildren(QComboBox):
+                pages_with_combos.add(t.id)
+                if c.width() < 60:
+                    c.resize(160, max(c.height(), 30))
+                key = "muted" if c.isEnabled() else "border_strong"
+                assert _arrow_pixels(c, colour[key]) > 4 or (c.hasFocus() and _arrow_pixels(c, colour["accent"]) > 4),                     (theme, t.id, c.objectName())
+                checked += 1
+        assert len(pages_with_combos) >= 10 and checked >= 19, (pages_with_combos, checked)
+
+
+# ---------------------------------------------------------------- worker cleanup after cancel
+def test_cancelled_task_releases_the_worker_and_a_new_task_can_start(win):
+    from v2 import workers
+    before = len(workers._alive)
+    go = threading.Event()
+
+    def long(ctx):
+        for _ in range(500):
+            ctx.check_cancelled()
+            go.wait(0.01)
+    win.run(long, "t.long")
+    win.cancel_task()
+    t0 = time.time()
+    assert wait_for(lambda: win.task is None, 5)
+    assert time.time() - t0 < 2                                       # cancel noticed at the next checkpoint
+    assert len(workers._alive) == before                              # bridge + task released
+    assert not [th for th in threading.enumerate() if th.name == "gisbox-task-t.long"] or \
+        wait_for(lambda: not [th for th in threading.enumerate() if th.name == "gisbox-task-t.long"], 3)
+    done = []
+    assert win.run(lambda ctx: 42, "t.after", on_done=done.append) is not None
+    assert wait_for(lambda: done == [42])
+
+
+# ---------------------------------------------------------------- build diagnostics
+def test_selftest_all_pages_writes_a_report(qapp, tmp_path, monkeypatch):
+    import gis_box_v2
+    monkeypatch.setenv("GIS_BOX_V2_DIR", str(tmp_path / "cfg"))
+    report = tmp_path / "report.txt"
+    rc = gis_box_v2.main(["--selftest", "--all-pages", "--report", str(report)])
+    text = report.read_text(encoding="utf-8")
+    assert rc == 0 and text.strip().endswith("RESULT OK"), text
+    assert text.count(" dark OK") == len(registry.TOOLS)
+    assert "theme assets (SVG chevrons / ticks): OK" in text and "GIS round trip" in text
