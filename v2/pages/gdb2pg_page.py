@@ -362,7 +362,7 @@ class Gdb2PgPage(QWidget):
             return
         self._log("— " + self._z("loading_layers"))
         self.shell.run(lambda ctx: core.list_layers(ogrinfo, src), "gdb2pg.layers", inputs=[src],
-                       on_done=lambda layers: self._fill_layers(src, layers))
+                       on_done=lambda layers: self._fill_layers(src, layers), owner=self)
 
     def _fill_layers(self, src, layers):
         if src != self._source():
@@ -533,7 +533,7 @@ class Gdb2PgPage(QWidget):
                 QTimer.singleShot(0, self, lambda: self._when_free(
                     lambda: self._run_import(ogr2ogr, ogrinfo, src, layers, pg, opt)))
         self.shell.run(check, "gdb2pg.check", params={"db": self._db_label(), "layers": len(layers)},
-                       on_done=checked)
+                       on_done=checked, owner=self)
         return True
 
     def _when_free(self, fn):
@@ -742,7 +742,8 @@ class HistoryDialog(QDialog):
                 p._log("— " + z("hist_deleted", n=n))
                 p._info(z("hist_deleted", n=n))
         p.shell.run(lambda ctx: core.delete_features(ogrinfo, pg, r["schema"], table, key, ids),
-                    "gdb2pg.delete_features", params={"table": table, "n": len(ids)}, on_done=done)
+                    "gdb2pg.delete_features", params={"table": table, "n": len(ids)}, on_done=done,
+                    owner=p)
 
     def delete_record(self):
         r = self.selected_run()
