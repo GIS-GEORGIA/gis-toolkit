@@ -89,12 +89,6 @@ def staged_shapefile(final_shp):
         _remove_quietly(stage)
 
 
-def discard_partial(paths):
-    """Remove files / folders a cancelled step had already produced (best effort)."""
-    for p in paths or ():
-        _remove_quietly(p)
-
-
 def leftover_staging(folder):
     """Hidden staging entries (``.<name>.part*``) in ``folder`` - for tests and diagnostics."""
     try:
