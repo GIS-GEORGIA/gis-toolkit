@@ -15,7 +15,7 @@ GIS_BOX გაიხსნება ნებისმიერი არას�
 ## არასავალდებულო — `requirements-optional.txt`
 | პაკეტი | რას რთავს | შენიშვნა |
 |---|---|---|
-| **PySide6** ≥ 6.6 | V2 ინტერფეისი | Linux-ზე სჭირდება სისტემური ბიბლიოთეკები (იხ. ქვემოთ) |
+| **PySide6** ≥ 6.6 | V2 ინტერფეისი | Linux-ზე სჭირდება სისტემური ბიბლიოთეკები (იხ. ქვემოთ). **6.12.0 გამორიცხულია** Windows-ის გარეთ Python 3.11-ზე (იხ. [TROUBLESHOOTING.md](TROUBLESHOOTING.md)) |
 | ezdxf ≥ 1.4 | DWG/DXF კონვერტაციის სარეზერვო წამკითხველი | |
 | psycopg[binary] ≥ 3.1 | PostgreSQL/PostGIS | პაროლი არასდროს გადაეცემა ბრძანების ხაზით (`PGPASSWORD` გარემოს ცვლადი) |
 | numpy, opencv-python, Pillow, PyMuPDF, rapidocr-onnxruntime | კოორდინატების ამომღები (OCR) | |

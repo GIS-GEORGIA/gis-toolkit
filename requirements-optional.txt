@@ -1,5 +1,8 @@
 # GIS_BOX V2 - optional dependencies (each enables one feature; the app starts without them)
-PySide6>=6.6              # modern V2 GUI
+# modern V2 GUI. PySide6 6.12.0 outside Windows with Python < 3.12 loses references to True on
+# Signal.emit() and aborts the process ("bool_dealloc") - see docs/TROUBLESHOOTING.md.
+PySide6>=6.6,!=6.12.0; sys_platform != "win32" and python_version < "3.12"
+PySide6>=6.6; sys_platform == "win32" or python_version >= "3.12"
 ezdxf>=1.4                # DWG/DXF conversion
 psycopg[binary]>=3.1      # PostgreSQL / PostGIS
 numpy>=1.23

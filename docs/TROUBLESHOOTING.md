@@ -9,6 +9,7 @@
 | `PySide6 is not installed` | არასავალდებულო პაკეტი აკლია | `python -m pip install PySide6` (ან `-r requirements-optional.txt`) |
 | პროცესი ჩუმად ეცემა / `Windows fatal exception: access violation` | geopandas/shapely ჩაიტვირთა PySide6-მდე | PySide6 ყველაზე პირველად დააიმპორტე (იხ. [DEPENDENCIES.md](DEPENDENCIES.md)) |
 | Linux: `Could not load the Qt platform plugin "xcb"` | აკლია Qt-ის სისტემური ბიბლიოთეკა | `sudo apt install libxcb-cursor0 libegl1 libxkbcommon-x11-0` |
+| Linux, Python 3.11: დახურვისას `Fatal Python error: bool_dealloc` | PySide6/shiboken6 **6.12.0**-ის ხარვეზი: `Signal.emit()` ამცირებს `True`-ს მიმართვების რაოდენობას (6.11.3-ზე და Windows-ზე არ ხდება; Python 3.12+-ზე `True` უკვდავია) | `python -m pip install "PySide6!=6.12.0"` (ან `-r requirements-optional.txt`). `tests/test_pyside_emit_refcount.py` ამას პირდაპირ ამოწმებს |
 | Linux: `No module named tkinter` | სისტემური პაკეტი | `sudo apt install python3-tk` |
 | Linux: ფანჯრის გარეშე სერვერი | არ არის ეკრანი | `xvfb-run -a python gis_box_v2.py --selftest` |
 | ქართული ტექსტის მაგივრად კვადრატები | შრიფტი აკლია, ან Qt `offscreen` პლატფორმა | Linux: `fonts-dejavu-core`. `offscreen` შრიფტებს საერთოდ არ ხატავს — ეს მხოლოდ ტესტებშია |
