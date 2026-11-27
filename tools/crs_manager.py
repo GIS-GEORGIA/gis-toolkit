@@ -350,9 +350,18 @@ def _safe_output(src, out):
 
 
 def _write(gdf, out):
+    """Write ``gdf`` to the NEW file ``out`` - complete or not at all: it is written under a hidden temporary
+    name in the same folder and renamed only when GDAL has finished (tools.safe_output)."""
+    from tools.safe_output import staged_file, staged_shapefile
     ext = os.path.splitext(out)[1].lower()
     driver = {".gpkg": "GPKG", ".geojson": "GeoJSON", ".json": "GeoJSON", ".shp": "ESRI Shapefile"}.get(ext)
-    gdf.to_file(out, driver=driver, engine="pyogrio") if driver else gdf.to_file(out, engine="pyogrio")
+    kw = {"engine": "pyogrio"}
+    if driver:
+        kw["driver"] = driver
+    if ext == ".gpkg":
+        kw["layer"] = os.path.splitext(os.path.basename(out))[0]   # as before: not the temporary file's name
+    with (staged_shapefile(out) if ext == ".shp" else staged_file(out)) as tmp:
+        gdf.to_file(tmp, **kw)
 
 
 def assign_file(src, out, crs, confirmed=False, layer=None):

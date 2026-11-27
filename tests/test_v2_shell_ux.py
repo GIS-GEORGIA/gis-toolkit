@@ -359,3 +359,71 @@ def test_selftest_all_pages_writes_a_report(qapp, tmp_path, monkeypatch):
     assert rc == 0 and text.strip().endswith("RESULT OK"), text
     assert text.count(" dark OK") == len(registry.TOOLS)
     assert "theme assets (SVG chevrons / ticks): OK" in text and "GIS round trip" in text
+    assert "asset folder:" in text and "(source)" in text and "FAILED" not in text
+
+
+def test_selftest_rejects_assets_from_outside_a_frozen_bundle(qapp, tmp_path, monkeypatch):
+    import gis_box_v2
+    monkeypatch.setenv("GIS_BOX_V2_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "bundle"), raising=False)   # pretend: packaged app
+    report = tmp_path / "r.txt"
+    assert gis_box_v2.main(["--selftest", "--all-pages", "--report", str(report)]) == 1
+    text = report.read_text(encoding="utf-8")
+    assert "asset folder FAILED: outside the packaged application" in text and text.strip().endswith("RESULT FAILED")
+
+
+def test_qt_load_failure_names_the_real_problem(monkeypatch):
+    """A packaged app on a minimal Linux said "PySide6 is not installed" although only libEGL was missing."""
+    import gis_box_v2
+    missing_pkg = ModuleNotFoundError("No module named 'PySide6'", name="PySide6")
+    assert "pip install PySide6" in gis_box_v2._qt_import_problem(missing_pkg)
+    lib = ImportError("libEGL.so.1: cannot open shared object file: No such file or directory")
+    monkeypatch.setattr(sys, "platform", "linux")
+    text = gis_box_v2._qt_import_problem(lib)
+    assert "could not be loaded" in text and "libEGL.so.1" in text and "apt install" in text
+    assert "not installed" not in text
+    glibc = ImportError("/lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.43' not found (required by libglib-2.0.so.0)")
+    text = gis_box_v2._qt_import_problem(glibc)                      # built on a newer distribution
+    assert "newer Linux" in text and "apt install" not in text
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert "apt install" not in gis_box_v2._qt_import_problem(lib)
+
+
+def test_deb_package_declares_the_qt_system_libraries():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    text = open(os.path.join(root, "packaging", "nfpm.yaml"), encoding="utf-8").read()
+    deb = text.split("overrides:", 1)[1]
+    for pkg in ("libegl1", "libgl1", "libxkbcommon0", "libfontconfig1", "libdbus-1-3", "libxcb-cursor0",
+                "libwayland-client0", "fonts-dejavu-core"):
+        assert "- " + pkg in deb, pkg
+
+
+# ---------------------------------------------------------------- small windows / emoji on Linux
+def test_no_page_is_squeezed_at_the_minimum_window_size(win):
+    """At 900x600 the long (Georgian) pages scroll instead of being squashed / cut off (7 of 14 were)."""
+    win.resize(900, 600)
+    win.show()
+    for lang in ("ka", "en"):
+        if win.lang != lang:
+            win.set_lang(lang)
+        for t in registry.TOOLS:
+            win.show_tool(t.id)
+            QCoreApplication.processEvents()
+            page = win.pages[t.id]
+            if page.native is None:
+                continue
+            hint = page.native.minimumSizeHint()
+            assert page.native.height() >= hint.height() and page.native.width() >= hint.width(), (lang, t.id)
+            assert page.scroll.widget() is page.native
+    win.set_lang("ka")
+
+
+def test_decorative_emoji_are_dropped_only_without_an_emoji_font(qapp, monkeypatch):
+    from v2 import i18n
+    monkeypatch.setattr(i18n, "_emoji_font", False)                  # e.g. a Linux desktop without one
+    assert i18n.plain("\U0001F5D1 Delete") == "Delete"
+    assert i18n.plain("\U0001F4CB  Copy") == "Copy"
+    assert i18n.plain("★ Favorites") == "★ Favorites" and i18n.plain("⚠ check") == "⚠ check"
+    assert i18n.tr("en", "sc_tmpl_del") == "Delete" and i18n.tr("ka", "sc_tmpl_del") == "წაშლა"
+    monkeypatch.setattr(i18n, "_emoji_font", True)                   # Windows: Segoe UI Emoji
+    assert i18n.tr("en", "sc_tmpl_del") == "\U0001F5D1 Delete"

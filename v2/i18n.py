@@ -1,4 +1,5 @@
 """V2 shell strings (Georgian / English)."""
+import re
 
 S = {
     "app": {"ka": "GIS_BOX", "en": "GIS_BOX"},
@@ -283,5 +284,31 @@ def tr(lang, key, **fmt):
     d = S.get(key)
     if not d:
         return key
-    s = d.get(lang) or d.get("en") or key
+    s = plain(d.get(lang) or d.get("en") or key)
     return s.format(**fmt) if fmt else s
+
+
+_EMOJI_PREFIX = re.compile(r"^[\U0001F000-\U0001FFFF]️?\s*")      # pictographs only - ★ ⚠ ✓ stay
+_emoji_font = None
+
+
+def emoji_supported():
+    """True when an emoji font is installed (Windows: Segoe UI Emoji). Many Linux desktops have none, and Qt
+    then draws decorative emoji such as the one in "🗑 Delete" as an empty box. Needs a running Qt app."""
+    global _emoji_font
+    if _emoji_font is None:
+        try:
+            from PySide6.QtGui import QFontDatabase, QGuiApplication
+            if QGuiApplication.instance() is None:
+                return True                                # not known yet - do not cache
+            _emoji_font = any("emoji" in f.lower() for f in QFontDatabase.families())
+        except Exception:                                  # noqa: BLE001 - no Qt: plain text is never wrong
+            return True
+    return _emoji_font
+
+
+def plain(text):
+    """``text`` without a leading decorative emoji when the system cannot draw it (labels stay readable)."""
+    if text and not emoji_supported():
+        return _EMOJI_PREFIX.sub("", text)
+    return text

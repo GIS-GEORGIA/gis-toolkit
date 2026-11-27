@@ -790,3 +790,59 @@ def test_source_years_and_sequential_years_equal_one_by_one(dbs):
         c.execute(pl, backup=False)
         total += pl.totals()["inserted"]
     assert total == 5 and fx.counts(dst)["point"][0] == 4 and fx.counts(dst)["line"][0] == 1
+
+
+# ---- a failed / cancelled export never leaves a half-made database behind ----
+def _no_db_files(folder, stem):
+    return [f for f in os.listdir(folder) if f.lower().startswith(stem.lower() + ".")]
+
+
+def test_failed_crs_setup_of_a_new_database_leaves_no_file(dbs, tmp_path, monkeypatch):
+    """The write connection must be closed even when an UPDATE fails - otherwise the cleanup cannot delete
+    the open (locked) .mdb on Windows and a half-made database stays."""
+    src, _dst = dbs
+    fx.seed(src, "point", [{"no": "N1", "date": None}])
+    real = c.connect
+
+    class BrokenCursor:
+        def __init__(self, cur):
+            self._cur = cur
+
+        def execute(self, sql, *a):
+            if sql.startswith("UPDATE GDB_SpatialRefs"):
+                raise RuntimeError("simulated driver error")
+            return self._cur.execute(sql, *a)
+
+    class Conn:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def cursor(self):
+            return BrokenCursor(self._conn.cursor())
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def connect(path, mode="ro"):
+        conn = real(path, mode)
+        return Conn(conn) if mode == "excl" and path.endswith("new_no_date.mdb") else conn
+    monkeypatch.setattr(c, "connect", connect)
+    with pytest.raises(RuntimeError, match="simulated"):
+        _undated(src, tmp_path)
+    assert _no_db_files(str(tmp_path), "new_no_date") == []
+
+
+def test_cancel_during_new_database_export_leaves_no_file(dbs, tmp_path):
+    src, _dst = dbs
+    fx.seed(src, "point", [{"no": "N{}".format(i), "date": None} for i in range(5)])
+    calls = []
+
+    def cancel():                                   # cancel inside the insert loop (one transaction)
+        calls.append(1)
+        return len(calls) > 3
+    with pytest.raises(c.TransferError) as e:
+        _undated(src, tmp_path, cancel=cancel)
+    assert e.value.code == "cancelled"
+    assert _no_db_files(str(tmp_path), "new_no_date") == []
+    out, plan = _undated(src, tmp_path)               # a new run after the cancel works normally
+    assert plan is not None and fx.counts(out)["point"][0] == 5

@@ -436,7 +436,15 @@ class MainWindow(QMainWindow):
                 w.error = e
                 return w
             w.native = page
-            lay.addWidget(page, 1)
+            # Scrolls only when the window is smaller than the page needs (900x600 minimum, long Georgian labels);
+            # before, Qt squeezed or cut off the controls of 7 of the 14 pages at that size.
+            scroll = QScrollArea()
+            scroll.setObjectName("pageScroll")
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setWidget(page)
+            w.scroll = scroll
+            lay.addWidget(scroll, 1)
         else:
             note = QLabel(self.t("legacy_note"))
             note.setObjectName("muted")

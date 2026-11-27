@@ -60,6 +60,10 @@ sh install_linux.sh          # .venv + core + optional + დიაგნოს�
   Wayland-ის სესიაში (GNOME/KDE, WSLg) `libxcb-cursor0`-ის გარეშეც მუშაობს — `QT_QPA_PLATFORM=wayland ./GIS_BOX_V2.sh`.
   *Under Wayland (GNOME/KDE, WSLg) V2 also runs without `libxcb-cursor0`: `QT_QPA_PLATFORM=wayland ./GIS_BOX_V2.sh`.
   Georgian text needs a font with Georgian glyphs (DejaVu Sans or Noto Sans Georgian — `fonts-dejavu-core`).*
+- **`.deb`** (Releases) აცხადებს Qt-ის სისტემურ ბიბლიოთეკებს დამოკიდებულებად — დააყენე `apt`-ით, რომ ისინიც ჩამოიტვირთოს:
+  *The `.deb` declares the Qt system libraries as dependencies - install it with apt so they are pulled in:*
+  `sudo apt install ./gis-box_<version>_amd64.deb` (წაშლა / remove: `sudo apt remove gis-box`).
+  თუ Qt ვერ ჩაიტვირთა, V2 წერს რომელი ბიბლიოთეკა აკლია / *if Qt cannot load, V2 names the missing library.*
 - **შემოწმება / check:** `python gis_box_v2.py --selftest --all-pages` (ან ბილდში `GIS_BOX --v2 --selftest --all-pages --report report.txt`)
   აგებს 14-ვე გვერდს ორივე თემაში, ამოწმებს თემის SVG-ებს, GIS მოდულებს და GDAL/PROJ-ს; ბოლო ხაზი `RESULT OK`.
 - GDB → PostGIS-ს სჭირდება `ogr2ogr`: `sudo apt install gdal-bin`.

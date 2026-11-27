@@ -17,7 +17,7 @@ from tools import search_core
 from tools import shp_analysis_core as an_core
 from tools.regions import layer_code, layer_display
 from v2 import workers
-from v2.i18n import tr
+from v2.i18n import plain, tr
 
 
 def _defaults():
@@ -67,7 +67,7 @@ class ParcelSearchPage(QWidget):
     # ------------------------------------------------------------------ texts / state
     def _p(self, key, **f):
         d = self.PTR.get(key, {})
-        s = d.get(self.lang) or d.get("en") or key
+        s = plain(d.get(self.lang) or d.get("en") or key)       # the shared strings carry emoji (💾, 🗑, 🔍)
         return s.format(**f) if f else s
 
     def _a(self, key, **f):

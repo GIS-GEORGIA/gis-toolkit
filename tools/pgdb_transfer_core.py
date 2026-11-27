@@ -831,16 +831,8 @@ def export_undated(src_path, mapping, out_path, log=None, progress=None, cancel=
         src_info = inspect_db(src_path, sc)
         new_info = inspect_db(out_path)
         # ახალი ბაზის CRS = წყაროს CRS (რომ გეომეტრია არ გადაიყვანოს)
-        wc = connect(out_path, "excl")
-        wcur = wc.cursor()
-        for kind in KINDS:
-            if kind in mapping:
-                sl = src_info.layers[mapping[kind][0]]
-                nl = new_info.by_kind(kind)[0]
-                if sl.srtext:
-                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (sl.srtext, nl.srid))
-        wc.commit()
-        wc.close()
+        _set_new_db_crs(out_path, [(src_info.layers[mapping[kind][0]].srtext, new_info.by_kind(kind)[0].srid)
+                                   for kind in KINDS if kind in mapping])
         new_info = inspect_db(out_path)
         plan = Plan(src_path, out_path, 0)
         s_cur = sc.cursor()
@@ -1058,15 +1050,8 @@ def export_inserted(plan, out_path, log=None, progress=None, cancel=None, templa
                     raise TransferError("crs_mismatch", "{}: {}".format(kind, out_path))
             log("appending to existing database: {}".format(out_path))
         else:
-            wc = connect(out_path, "excl")
-            wcur = wc.cursor()
-            for kind, (lp, _items) in wanted.items():
-                dl = dst_info.layers[lp.dst_name]
-                nl = new_info.by_kind(kind)[0]
-                if dl.srtext:
-                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (dl.srtext, nl.srid))
-            wc.commit()
-            wc.close()
+            _set_new_db_crs(out_path, [(dst_info.layers[lp.dst_name].srtext, new_info.by_kind(kind)[0].srid)
+                                       for kind, (lp, _items) in wanted.items()])
             new_info = inspect_db(out_path)
         out = Plan(plan.src_path, out_path, plan.year)
         for kind in KINDS:
@@ -1170,17 +1155,14 @@ def merge_databases(paths, out_path, log=None, progress=None, cancel=None, templ
                 c0.close()
         # ახალი ბაზის CRS = პირველი ბაზის შესაბამისი ფენის CRS
         new_info = inspect_db(out_path)
-        wc = connect(out_path, "excl")
-        wcur = wc.cursor()
+        updates = []
         for kind in KINDS:
             for info in infos:
                 cand = [l for l in info.by_kind(kind) if l.srtext]
                 if cand:
-                    nl = new_info.by_kind(kind)[0]
-                    wcur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (cand[0].srtext, nl.srid))
+                    updates.append((cand[0].srtext, new_info.by_kind(kind)[0].srid))
                     break
-        wc.commit()
-        wc.close()
+        _set_new_db_crs(out_path, updates)
         new_info = inspect_db(out_path)
         out = Plan(paths[0], out_path, 0)
         out.sources = paths
@@ -1458,6 +1440,22 @@ def make_backup(dst_path, log=None):
     if log:
         log("backup of destination: {} ({:.1f} MB)".format(out, size / 1048576.0))
     return out
+
+
+def _set_new_db_crs(out_path, updates):
+    """Write ``[(srtext, srid), …]`` into a newly created database (empty srtext = keep the template's CRS).
+
+    The connection is always closed - also when an UPDATE fails - so the caller's cleanup can delete the
+    half-made file (Windows cannot delete an .mdb that is still open)."""
+    wc = connect(out_path, "excl")
+    try:
+        cur = wc.cursor()
+        for srtext, srid in updates:
+            if srtext:
+                cur.execute("UPDATE GDB_SpatialRefs SET SRTEXT=? WHERE SRID=?", (srtext, srid))
+        wc.commit()
+    finally:
+        wc.close()
 
 
 def execute(plan, dst_info=None, log=None, progress=None, cancel=None, backup=True):

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLineE
                                QVBoxLayout, QWidget)
 
 from tools import map_services_core as core
-from v2.i18n import tr
+from v2.i18n import plain, tr
 
 
 class MapServicesPage(QWidget):
@@ -52,7 +52,7 @@ class MapServicesPage(QWidget):
             edit = QLineEdit(url)
             edit.setReadOnly(True)                   # selectable, not editable
             row.addWidget(edit, 1)
-            btn = QPushButton("📋  " + self._t("ms_copy"))
+            btn = QPushButton(plain("📋  " + self._t("ms_copy")))
             btn.setToolTip(self._t("ms_tip"))
             btn.clicked.connect(lambda _c=False, u=url: self.copy(u))
             row.addWidget(btn)
