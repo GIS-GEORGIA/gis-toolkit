@@ -43,8 +43,8 @@ def pytest_sessionfinish(session, exitstatus):
         from PySide6.QtCore import QCoreApplication, QEvent
         app.clipboard().clear()
         # Destroy the windows the tests left behind and collect them NOW, while Qt is still alive,
-        # instead of during interpreter finalization (Linux / Python 3.11 aborted there with
-        # "bool_dealloc" - a refcount error in a C extension - after all tests had passed).
+        # instead of during interpreter finalization. (Not the cause of the Linux / Python 3.11
+        # "bool_dealloc" abort: that is PySide6 6.12.0 - see tests/test_pyside_emit_refcount.py.)
         for w in app.topLevelWidgets():
             w.close()
             w.deleteLater()
