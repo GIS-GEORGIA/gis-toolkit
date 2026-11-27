@@ -187,7 +187,7 @@ def test_favorites_and_recent_groups(win):
     favbtn.click()
     assert win.settings.is_favorite("line_buffer")
     titles = [win.tree.topLevelItem(i).text(0) for i in range(win.tree.topLevelItemCount())]
-    assert any("★" in t for t in titles) and any("🕘" in t for t in titles)
+    assert any("★" in t for t in titles) and any("◷" in t for t in titles)
 
 
 def test_theme_and_language_switch_persist(win):

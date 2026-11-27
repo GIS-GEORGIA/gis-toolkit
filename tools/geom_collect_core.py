@@ -240,6 +240,8 @@ def collect_to_geopackage(files, out_path, target_epsg=None,
         try:
             got_any = False
             for lyr, gdf in _read_layers(path):
+                if cancel():            # a DWG/DXF can hold many layers
+                    break
                 parts = _bucketize(gdf, name, lyr)
                 for bucket, sub in parts.items():
                     if auto_crs is None and sub.crs is not None:
@@ -282,26 +284,48 @@ def collect_to_geopackage(files, out_path, target_epsg=None,
             return gdf.set_crs(target, allow_override=True)
         return gdf
 
-    # ჩაწერა — ცარიელი შრეები გამოტოვდება; არსებულ ფაილს ზემოდან არ ვწერთ
+    def _cancelled_result():
+        return {"cancelled": True, "points": 0, "lines": 0, "polygons": 0,
+                "files_ok": files_ok, "files_skipped": files_skipped,
+                "errors": errors, "out_path": out_path, "out_files": [], "crs": None}
+
+    if cancel():
+        return _cancelled_result()
+
+    # ჩაწერა — ცარიელი შრეები გამოტოვდება; არსებულ ფაილს ზემოდან არ ვწერთ.
+    # The GPKG is built under a hidden temporary name and renamed only when all layers are written, so a
+    # cancel / error between layers never leaves a GeoPackage with only some of the layers.
+    from tools.safe_output import staged_file
+
+    class _Stop(Exception):
+        pass
+
     if os.path.exists(out_path):
         raise FileExistsError(out_path)
     counts = {"point": 0, "line": 0, "polygon": 0}
     out_files = []
     first = True
-    for bucket, layer_name in (("point", LAYER_POINTS), ("line", LAYER_LINES),
-                               ("polygon", LAYER_POLYGONS)):
-        parts = [p for p in (_normalize(p) for p in buckets[bucket]) if p is not None]
-        if not parts:
-            continue
-        merged = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True),
-                                  crs=target)
-        counts[bucket] = len(merged)
-        os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-        merged.to_file(out_path, layer=layer_name, driver="GPKG",
-                       mode="w" if first else "a")
-        out_files.append(layer_name)
-        first = False
-        log("✓ {}: {}".format(layer_name, counts[bucket]))
+    try:
+        with staged_file(out_path) as tmp:
+            for bucket, layer_name in (("point", LAYER_POINTS), ("line", LAYER_LINES),
+                                       ("polygon", LAYER_POLYGONS)):
+                if cancel():
+                    raise _Stop()
+                parts = [p for p in (_normalize(p) for p in buckets[bucket]) if p is not None]
+                if not parts:
+                    continue
+                merged = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True),
+                                          crs=target)
+                counts[bucket] = len(merged)
+                merged.to_file(tmp, layer=layer_name, driver="GPKG",
+                               mode="w" if first else "a")
+                out_files.append(layer_name)
+                first = False
+                log("✓ {}: {}".format(layer_name, counts[bucket]))
+            if cancel():
+                raise _Stop()
+    except _Stop:
+        return _cancelled_result()
 
     return {
         "cancelled": False,

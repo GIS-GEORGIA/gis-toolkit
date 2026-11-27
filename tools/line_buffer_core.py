@@ -117,12 +117,12 @@ class Cancelled(Exception):
 
 def scan_line_shapefiles(folder):
     """``{ფაილის სახელი: სრული გზა}`` — საქაღალდეში არსებული ხაზოვანი shapefile-ები."""
-    import glob
+    from tools.platform_utils import files_with_suffix
     out = {}
     if not folder or not os.path.isdir(folder):
         return out
     import pyogrio
-    for shp in sorted(glob.glob(os.path.join(folder, "*.shp"))):
+    for shp in files_with_suffix(folder, ".shp"):          # .SHP too (Linux is case-sensitive)
         try:
             gtype = str(pyogrio.read_info(shp).get("geometry_type") or "")
         except Exception:                          # noqa: BLE001 - წაუკითხავი ფაილი სხვას არ აჩერებს
@@ -177,9 +177,13 @@ def build_buffers(shp, out_dir, zones, target_epsg, log=None, progress=None, can
         if cancel():
             raise Cancelled()
         geom = build_buffer(geoms, dist)
+        if cancel():                    # the buffer of a long line can take a while - check before writing
+            raise Cancelled()
         path = output_path(out_dir, name)
-        gpd.GeoDataFrame([{"Zone": name, "Dist_m": dist}], geometry=[geom], crs=gdf.crs).to_file(
-            path, driver="ESRI Shapefile", encoding="utf-8")
+        from tools.safe_output import staged_shapefile
+        with staged_shapefile(path) as tmp:   # a failed write never leaves a half shapefile behind
+            gpd.GeoDataFrame([{"Zone": name, "Dist_m": dist}], geometry=[geom], crs=gdf.crs).to_file(
+                tmp, driver="ESRI Shapefile", encoding="utf-8")
         written.append((dist, path))
         log("{} m -> {}".format(dist, path))
         progress(i, len(zones))

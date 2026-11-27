@@ -148,7 +148,11 @@ def run_search(gdb, layer, field, codes, out_path, log, done, tr,
         matched = 0
         out_files = []
         result_out_path = None
+        if cancel and cancel():                     # last checkpoint before anything is written
+            done({"cancelled": True})
+            return
         if frames:
+            from tools.safe_output import staged_file, staged_shapefile
             import warnings
             import pandas as pd
             import geopandas as gpd
@@ -166,7 +170,11 @@ def run_search(gdb, layer, field, codes, out_path, log, done, tr,
                     gpkg_path = base + ".gpkg"
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        result.to_file(gpkg_path, driver="GPKG", encoding="utf-8")
+                        with staged_file(gpkg_path) as tmp:     # no half-written result on errors
+                            # layer name given explicitly: GDAL would otherwise name it after the hidden
+                            # staging file (".found.xxxx.part"), which newer GDAL rejects
+                            result.to_file(tmp, driver="GPKG", encoding="utf-8",
+                                           layer=os.path.splitext(os.path.basename(gpkg_path))[0])
                     out_files.append(gpkg_path)
                     result_out_path = gpkg_path
                     log(f"  ✓ GeoPackage: {gpkg_path}")
@@ -176,7 +184,8 @@ def run_search(gdb, layer, field, codes, out_path, log, done, tr,
                     shp_path = base + ".shp"
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        result.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+                        with staged_shapefile(shp_path) as tmp:
+                            result.to_file(tmp, driver="ESRI Shapefile", encoding="utf-8")
                     out_files.append(shp_path)
                     result_out_path = shp_path  # ვერ ნაპოვნის .txt ამის გვერდით შეინახება
                     log(f"  ✓ Shapefile:  {shp_path}")

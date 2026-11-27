@@ -102,3 +102,29 @@ def default_desktop():
         if os.path.isdir(d):
             return d
     return home
+
+
+# ---- case-insensitive file matching -------------------------------------------
+def files_with_suffix(folder, suffix):
+    """Files directly in ``folder`` whose name ends with ``suffix`` in ANY letter case, sorted.
+
+    ``glob("*.shp")`` is case-insensitive on Windows but case-sensitive on Linux, so ``PARCELS.SHP`` copied
+    from a Windows machine was silently missed there. Same result on both platforms with this helper."""
+    suffix = suffix.lower()
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    return sorted(os.path.join(folder, n) for n in names
+                  if n.lower().endswith(suffix) and os.path.isfile(os.path.join(folder, n)))
+
+
+def files_with_stem(folder, stem):
+    """Files ``<stem>.<anything>`` directly in ``folder``; the stem is matched case-insensitively."""
+    want = stem.lower() + "."
+    try:
+        names = os.listdir(folder or ".")
+    except OSError:
+        return []
+    return sorted(os.path.join(folder or "", n) for n in names
+                  if n.lower().startswith(want) and os.path.isfile(os.path.join(folder or "", n)))

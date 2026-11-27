@@ -327,9 +327,11 @@ def write_points(pts, crs, out_path):
     """Point shapefile with N / X / Y attributes (numbering = order along the zone corridor)."""
     import geopandas as gpd
     from shapely.geometry import Point
+    from tools.safe_output import staged_shapefile
     rows = [{"N": i, "X": round(x, 3), "Y": round(y, 3)} for i, (x, y) in enumerate(pts, start=1)]
-    gpd.GeoDataFrame(rows, geometry=[Point(x, y) for x, y in pts], crs=crs).to_file(
-        out_path, driver="ESRI Shapefile", encoding="utf-8")
+    with staged_shapefile(out_path) as tmp:            # complete shapefile or nothing
+        gpd.GeoDataFrame(rows, geometry=[Point(x, y) for x, y in pts], crs=crs).to_file(
+            tmp, driver="ESRI Shapefile", encoding="utf-8")
 
 
 def piece_path(out, name):
@@ -349,7 +351,9 @@ def write_piece(geom, crs, out_path):
     parts = list(geom.geoms) if hasattr(geom, "geoms") else [geom]
     parts = [g for g in parts if g.area > 0]
     rows = [{"N": i, "Area_m2": round(g.area, 5)} for i, g in enumerate(parts, start=1)]
-    gpd.GeoDataFrame(rows, geometry=parts, crs=crs).to_file(out_path, driver="ESRI Shapefile", encoding="utf-8")
+    from tools.safe_output import staged_shapefile
+    with staged_shapefile(out_path) as tmp:
+        gpd.GeoDataFrame(rows, geometry=parts, crs=crs).to_file(tmp, driver="ESRI Shapefile", encoding="utf-8")
 
 
 def shallow_summary(shallow, threshold_deg=SHALLOW_ANGLE_DEG):
@@ -362,9 +366,9 @@ def shallow_summary(shallow, threshold_deg=SHALLOW_ANGLE_DEG):
 
 # ---------------------------------------------------------------- ready-made template files (copy by zone)
 def template_files(src_dir, base):
-    import glob
-    import os
-    return glob.glob(os.path.join(src_dir or "", base + ".*"))
+    """``base.*`` in ``src_dir`` - matched case-insensitively, as on Windows, also on Linux."""
+    from tools.platform_utils import files_with_stem
+    return files_with_stem(src_dir or "", base)
 
 
 def next_template_index(dest, base):

@@ -27,11 +27,29 @@ class FileLockedError(Exception):
 
 
 def save_workbook(wb, path):
-    """openpyxl-ის workbook-ის შენახვა; ჩაკეტილ ფაილზე — FileLockedError."""
+    """openpyxl-ის workbook-ის შენახვა; ჩაკეტილ ფაილზე — FileLockedError.
+
+    The workbook is saved to a hidden temporary file in the same folder and then renamed over ``path``, so
+    an error while saving never leaves a truncated .xlsx behind (and never damages the previous version)."""
+    import os
+    import tempfile
+    folder = os.path.dirname(os.path.abspath(path))
     try:
-        wb.save(path)
+        fd, tmp = tempfile.mkstemp(prefix=".~" + os.path.basename(path) + ".", suffix=".part", dir=folder)
     except PermissionError as e:
         raise FileLockedError(path) from e
+    os.close(fd)
+    try:
+        wb.save(tmp)
+        os.replace(tmp, path)
+    except PermissionError as e:
+        raise FileLockedError(path) from e
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def close_open_workbook(path):

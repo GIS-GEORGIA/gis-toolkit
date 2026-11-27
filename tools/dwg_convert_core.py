@@ -374,7 +374,7 @@ def free_base(out_dir, base, fmt):
     return cand
 
 
-def convert_file(path, out_dir, fmt, target_epsg=None, log=None, assume_missing_crs=True):
+def convert_file(path, out_dir, fmt, target_epsg=None, log=None, assume_missing_crs=True, cancel=None):
     """ერთი DXF/DWG (ან ნებისმიერი GDAL-ვექტორის) კონვერტაცია ``fmt``-ში.
 
     fmt — 'shp' | 'gpkg' | 'gdb'. აბრუნებს dict-ს:
@@ -431,7 +431,7 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None, assume_missing_
                 return {"source": path, "out_path": None, "layers": [],
                         "error": gdal_err, "reason": None}
         return _write_converted(source_layers, base, path, out_dir, fmt,
-                                target_epsg, log, assume_missing_crs)
+                                target_epsg, log, assume_missing_crs, cancel=cancel)
     finally:
         if tmp_source is not None:
             try:
@@ -440,32 +440,51 @@ def convert_file(path, out_dir, fmt, target_epsg=None, log=None, assume_missing_
                 pass
 
 
+class ConvertCancelled(Exception):
+    """Raised between layers of one source when the user cancels; nothing of that source is kept."""
+
+
 def _write_converted(source_layers, base, source_path, out_dir, fmt,
-                     target_epsg, log, assume_missing_crs=True):
+                     target_epsg, log, assume_missing_crs=True, cancel=None):
     """წაკითხული შრეების ჩაწერა ``fmt``-ში — ``convert_file``-ის შიდა ნაწილი
-    (გამოცალკევებული, რომ DWG → GPKG ხიდის შემდეგაც იმავე ნაკადს გაუყვეს)."""
+    (გამოცალკევებული, რომ DWG → GPKG ხიდის შემდეგაც იმავე ნაკადს გაუყვეს).
+
+    Output safety: everything of one source is written under a hidden temporary name in ``out_dir``
+    (``tools.safe_output.staged_file``) and renamed to its final name only when every layer is written.
+    A cancel (``cancel()`` is checked before each layer) or an error therefore never leaves a partial
+    GPKG / GDB / SHP folder; ``ConvertCancelled`` is raised to the caller."""
+    from tools.safe_output import staged_file
+    cancel = cancel or (lambda: False)
     driver, ext = FORMATS[fmt]
     written = []
+
+    def checkpoint():
+        if cancel():
+            raise ConvertCancelled()
+
     if fmt == "shp":
         # ერთი ფაილი = ერთი შრე/ტიპი → ცალკე საქაღალდე ამ წყაროსთვის
         out_root = os.path.join(out_dir, base)
-        os.makedirs(out_root, exist_ok=True)
-        for lyr_name, gdf in source_layers:
-            buckets = _split_by_geom_type(gdf)
-            multi = len(buckets) > 1
-            for bucket, sub in buckets.items():
-                sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
-                name = sanitize(lyr_name)
-                if multi:
-                    name += "_" + bucket
-                out_path = os.path.join(out_root, name + ".shp")
-                k = 1
-                while os.path.exists(out_path):          # same layer name twice in one source
-                    k += 1
-                    out_path = os.path.join(out_root, "{}_{}.shp".format(name, k))
-                sub.to_file(out_path, driver=driver, encoding="utf-8")
-                written.append((name, len(sub)))
-                log("  ✓ {}: {}".format(name, len(sub)))
+        with staged_file(out_root) as stage_root:
+            os.makedirs(stage_root)
+            for lyr_name, gdf in source_layers:
+                buckets = _split_by_geom_type(gdf)
+                multi = len(buckets) > 1
+                for bucket, sub in buckets.items():
+                    checkpoint()
+                    sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
+                    name = sanitize(lyr_name)
+                    if multi:
+                        name += "_" + bucket
+                    out_path = os.path.join(stage_root, name + ".shp")
+                    k = 1
+                    while os.path.exists(out_path):          # same layer name twice in one source
+                        k += 1
+                        out_path = os.path.join(stage_root, "{}_{}.shp".format(name, k))
+                    sub.to_file(out_path, driver=driver, encoding="utf-8")
+                    written.append((name, len(sub)))
+                    log("  ✓ {}: {}".format(name, len(sub)))
+            checkpoint()
         return {"source": source_path, "out_path": out_root, "layers": written,
                 "error": None, "reason": None}
 
@@ -474,23 +493,26 @@ def _write_converted(source_layers, base, source_path, out_dir, fmt,
     # gpkg — მრავალშრიანი, შერეული გეომეტრიაც დაიტევს — პირდაპირ იწერება.
     out_path = os.path.join(out_dir, base + ext)        # base is free (free_base) — nothing is replaced
     first = True
-    for lyr_name, gdf in source_layers:
-        if gdf is None or len(gdf) == 0:
-            continue
-        if fmt == "gdb":
-            buckets = _split_by_geom_type(gdf)
-            multi = len(buckets) > 1
-            parts = [(sanitize(lyr_name) + ("_" + b if multi else ""), sub)
-                     for b, sub in buckets.items()]
-        else:
-            parts = [(sanitize(lyr_name), gdf)]
-        for name, sub in parts:
-            sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
-            sub.to_file(out_path, layer=name, driver=driver,
-                       mode="w" if first else "a")
-            first = False
-            written.append((name, len(sub)))
-            log("  ✓ {}: {}".format(name, len(sub)))
+    with staged_file(out_path) as tmp:
+        for lyr_name, gdf in source_layers:
+            if gdf is None or len(gdf) == 0:
+                continue
+            if fmt == "gdb":
+                buckets = _split_by_geom_type(gdf)
+                multi = len(buckets) > 1
+                parts = [(sanitize(lyr_name) + ("_" + b if multi else ""), sub)
+                         for b, sub in buckets.items()]
+            else:
+                parts = [(sanitize(lyr_name), gdf)]
+            for name, sub in parts:
+                checkpoint()
+                sub = _normalize_crs(sub, target_epsg, log, assume_missing_crs)
+                sub.to_file(tmp, layer=name, driver=driver,
+                            mode="w" if first else "a")
+                first = False
+                written.append((name, len(sub)))
+                log("  ✓ {}: {}".format(name, len(sub)))
+        checkpoint()
     return {"source": source_path, "out_path": out_path if written else None,
             "layers": written, "error": None, "reason": None}
 
@@ -512,7 +534,13 @@ def convert_batch(files, out_dir, fmt, target_epsg=None,
                     "files_empty": empty, "results": results}
         name = os.path.basename(path)
         log(name)
-        r = convert_file(path, out_dir, fmt, target_epsg, log=log, assume_missing_crs=assume_missing_crs)
+        try:
+            r = convert_file(path, out_dir, fmt, target_epsg, log=log, assume_missing_crs=assume_missing_crs,
+                             cancel=cancel)
+        except ConvertCancelled:
+            log("  ✗ cancelled - the partial output of this file was discarded")
+            return {"cancelled": True, "files_ok": ok, "files_skipped": skipped,
+                    "files_empty": empty, "results": results}
         results.append(r)
         if r["error"]:
             skipped += 1

@@ -257,6 +257,7 @@ class ZoneIntersectPage(QWidget):
         def work(ctx):
             ctx.log(self._z("running"))
             res = core.compute(parcel, zone, field, value)
+            ctx.check_cancelled()                  # cancelled while computing: write nothing
             if res["points"]:
                 path = core.next_free_path(out, core.output_base(name, default, res["crs"]))
                 core.write_points(res["points"], res["crs"], path)
