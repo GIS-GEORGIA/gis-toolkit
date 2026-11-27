@@ -23,10 +23,17 @@ class ToolInfo:
     kind: str = "legacy"
     legacy_key: str = ""
     page: str = ""
+    badge: str = ""             # short code drawn as the tool's icon (no image files needed)
 
 
 def _t(id, cat, ka, en, dka, den, kind="legacy", key="", page=""):
-    return ToolInfo(id, cat, {"ka": ka, "en": en}, {"ka": dka, "en": den}, kind, key, page)
+    return ToolInfo(id, cat, {"ka": ka, "en": en}, {"ka": dka, "en": den}, kind, key, page, BADGES.get(id, ""))
+
+
+BADGES = {"crs_manager": "CRS", "shp_coords": "XY", "coord_extractor": "OCR", "zone_intersect": "ZN",
+          "line_intersect": "LX", "line_buffer": "BUF", "db_transfer": "MDB", "gdb2pg": "PG",
+          "geom_collect": "GPK", "dwg_convert": "DWG", "rename": "Aa", "updates": "UP",
+          "parcel_search": "PCL", "map_services": "MAP"}
 
 
 TOOLS = [
@@ -82,6 +89,21 @@ TOOLS = [
 ]
 
 BY_ID = {t.id: t for t in TOOLS}
+
+
+def badge(tool):
+    """Short icon code; falls back to the initials of the English name."""
+    return tool.badge or "".join(w[0] for w in tool.name["en"].split()[:2]).upper() or "?"
+
+
+def by_category():
+    """[(category_id, names, [tools...]), ...] in display order (categories without tools are left out)."""
+    out = []
+    for cid, names in CATEGORIES:
+        items = [t for t in TOOLS if t.category == cid]
+        if items:
+            out.append((cid, names, items))
+    return out
 
 
 def category_name(cat_id, lang):

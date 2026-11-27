@@ -13,7 +13,7 @@ DEFAULTS = {
     "favorites": [],
     "recent_tools": [],
     "recent_files": [],
-    "window": {"w": 1180, "h": 760},
+    "window": {"w": 1180, "h": 760, "side": 290, "max": False},
     "tool_state": {},                # remembered paths/options per native tool
     "updates": {"auto_check": False, "notify": True, "prerelease": False, "last_check": "",
                 "latest_version": "", "latest_published": ""},
@@ -62,14 +62,20 @@ class Settings:
             self.data["lang"] = "ka"
 
     def save(self):
-        """Atomic write (temp file + replace); failures never break the app."""
+        """Atomic write (temp file + replace); failures never break the app and never leave a temp file behind."""
+        tmp = None
         try:
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(self.path), suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=1)
             os.replace(tmp, self.path)
             return True
-        except OSError:
+        except (OSError, TypeError, ValueError):
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
             return False
 
     def __getitem__(self, k):
